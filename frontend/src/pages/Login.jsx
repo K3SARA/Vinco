@@ -98,8 +98,12 @@ export default function Login() {
         
         {/* HEADER */}
         <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-wood-600 font-extrabold text-white text-2xl shadow-lg border border-wood-500">
-            A
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-xl bg-white shadow-lg border border-stone-200 overflow-hidden">
+            <img
+              src="/logo.png"
+              alt="Alight Furniture & Timbers"
+              className="h-full w-full object-contain p-1.5"
+            />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-white font-display">
             {needsSetup ? 'Initial System Setup' : 'Alight Furniture'}
