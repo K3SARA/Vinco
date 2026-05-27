@@ -1,0 +1,33 @@
+{
+  "name": "alight-furniture-billing-app",
+  "version": "1.0.0",
+  "description": "Furniture Shop Billing and Management App",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "install:all": "npm install && cd frontend && npm install",
+    "prisma:generate": "npx prisma generate",
+    "prisma:migrate": "npx prisma migrate dev",
+    "seed": "node prisma/seed.js",
+    "postinstall": "npm install --prefix frontend && npx prisma generate",
+    "server": "nodemon src/server.js",
+    "client": "npm run dev --prefix frontend",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "npm run build --prefix frontend",
+    "start": "npx prisma migrate deploy && node src/server.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.12.1",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.0",
+    "prisma": "^5.12.1"
+  }
+}

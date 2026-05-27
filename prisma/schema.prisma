@@ -1,0 +1,458 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  role      String   // ADMIN, CASHIER, SALESPERSON, DELIVERY_STAFF
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BusinessSettings {
+  id                 String   @id @default("default")
+  shopName           String
+  ownerName          String
+  address            String
+  phone1             String
+  phone2             String
+  email              String
+  website            String
+  logoUrl            String?
+  taxNumber          String?
+  invoicePrefix      String   @default("INV-")
+  quotationPrefix    String   @default("QTN-")
+  orderPrefix        String   @default("ORD-")
+  currency           String   @default("LKR")
+  receiptFooterText  String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ReceiptSettings {
+  id                  String   @id @default("default")
+  showLogo            Boolean  @default(true)
+  showShopName        Boolean  @default(true)
+  showAddress         Boolean  @default(true)
+  showPhone           Boolean  @default(true)
+  showEmail           Boolean  @default(true)
+  showTaxNumber       Boolean  @default(true)
+  showCustomerName    Boolean  @default(true)
+  showCustomerPhone   Boolean  @default(true)
+  showCustomerAddress Boolean  @default(true)
+  showSalesperson     Boolean  @default(true)
+  showProductCode     Boolean  @default(true)
+  showProductImage    Boolean  @default(false)
+  showWarranty        Boolean  @default(true)
+  showDeliveryDetails Boolean  @default(true)
+  showPaymentDetails  Boolean  @default(true)
+  showBalanceAmount   Boolean  @default(true)
+  showSignatureArea   Boolean  @default(true)
+  showFooterNote      Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  slug      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Product {
+  id             String          @id @default(uuid())
+  code           String          @unique // SKU
+  name           String
+  categoryId     String
+  category       Category        @relation(fields: [categoryId], references: [id])
+  material       String?
+  size           String?
+  color          String?
+  brand          String?
+  supplier       String?
+  costPrice      Float           @default(0.0)
+  sellingPrice   Float           @default(0.0)
+  stockQty       Float           @default(0.0)
+  minStockAlert  Float           @default(5.0)
+  warrantyPeriod String?         // e.g. "12 Months", "No Warranty"
+  image          String?
+  description    String?
+  status         String          @default("Active") // Active, Inactive
+  invoiceItems   InvoiceItem[]
+  quotationItems QuotationItem[]
+  orderItems     OrderItem[]
+  purchaseItems  PurchaseItem[]
+  stockMovements StockMovement[]
+  warranties     Warranty[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Material {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  image     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Customer {
+  id             String           @id @default(uuid())
+  name           String
+  phone          String           @unique
+  address        String
+  email          String?
+  openingBalance Float            @default(0.0)
+  currentBalance Float            @default(0.0)
+  notes          String?
+  status         String           @default("Active") // Active, Inactive
+  invoices       Invoice[]
+  quotations     Quotation[]
+  orders         Order[]
+  payments       Payment[]
+  ledgerEntries  CustomerLedger[]
+  warranties     Warranty[]
+  installments   Installment[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model CustomerLedger {
+  id              String   @id @default(uuid())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  date            DateTime @default(now())
+  transactionType String   // INVOICE, PAYMENT, ADJUSTMENT, ORDER
+  referenceNo     String   // Invoice No, Payment No, etc.
+  description     String
+  debit           Float    @default(0.0) // charges increase balance
+  credit          Float    @default(0.0) // payments reduce balance
+  balanceAfter    Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Supplier {
+  id             String           @id @default(uuid())
+  name           String
+  phone          String           @unique
+  address        String
+  email          String?
+  openingBalance Float            @default(0.0)
+  currentBalance Float            @default(0.0)
+  notes          String?
+  status         String           @default("Active") // Active, Inactive
+  purchases      Purchase[]
+  payments       SupplierPayment[]
+  ledgerEntries  SupplierLedger[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model SupplierLedger {
+  id              String   @id @default(uuid())
+  supplierId      String
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  date            DateTime @default(now())
+  transactionType String   // PURCHASE, PAYMENT, ADJUSTMENT
+  referenceNo     String
+  description     String
+  debit           Float    @default(0.0) // payments reduce payable balance
+  credit          Float    @default(0.0) // purchases increase payable balance
+  balanceAfter    Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Invoice {
+  id                 String        @id @default(uuid())
+  invoiceNumber      String        @unique
+  date               DateTime      @default(now())
+  customerId         String
+  customer           Customer      @relation(fields: [customerId], references: [id])
+  customerPhone      String
+  customerAddress    String
+  salespersonId      String?
+  salesperson        String?
+  subtotal           Float
+  discount           Float         @default(0.0)
+  deliveryCharge     Float         @default(0.0)
+  installationCharge Float         @default(0.0)
+  otherCharge        Float         @default(0.0)
+  grandTotal         Float
+  paidAmount         Float         @default(0.0)
+  balanceAmount      Float         @default(0.0)
+  paymentMethod      String        // Cash, Card, Bank Transfer, Cheque, Online, Other
+  paymentStatus      String        // PAID, PARTIAL, CREDIT, CANCELLED
+  furnitureImage     String?
+  notes              String?
+  items              InvoiceItem[]
+  payments           Payment[]
+  deliveries         Delivery[]
+  installments       Installment[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model InvoiceItem {
+  id             String     @id @default(uuid())
+  invoiceId      String
+  invoice        Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product    @relation(fields: [productId], references: [id])
+  productCode    String
+  productName    String
+  quantity       Float
+  unitPrice      Float
+  discount       Float      @default(0.0)
+  lineTotal      Float
+  materialName   String?
+  materialImage  String?
+  warrantyPeriod String?
+  warranties     Warranty[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model Quotation {
+  id                 String          @id @default(uuid())
+  quotationNumber    String          @unique
+  date               DateTime        @default(now())
+  customerId         String
+  customer           Customer        @relation(fields: [customerId], references: [id])
+  subtotal           Float
+  discount           Float           @default(0.0)
+  deliveryCharge     Float           @default(0.0)
+  installationCharge Float           @default(0.0)
+  totalAmount        Float
+  validUntil         DateTime
+  notes              String?
+  status             String          @default("Sent") // Draft, Sent, Accepted, Rejected, Expired, Converted
+  items              QuotationItem[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  productCode String
+  productName String
+  quantity    Float
+  unitPrice   Float
+  discount    Float     @default(0.0)
+  lineTotal   Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Order {
+  id                 String        @id @default(uuid())
+  orderNumber        String        @unique
+  customerId         String
+  customer           Customer      @relation(fields: [customerId], references: [id])
+  orderDate          DateTime      @default(now())
+  expectedDeliveryDate DateTime
+  subtotal           Float
+  discount           Float         @default(0.0)
+  deliveryCharge     Float         @default(0.0)
+  installationCharge Float         @default(0.0)
+  totalAmount        Float
+  advancePayment     Float         @default(0.0)
+  balanceAmount      Float         @default(0.0)
+  orderStatus        String        @default("Pending") // Pending, In Progress, Ready, Delivered, Cancelled
+  deliveryStatus     String        @default("Not Scheduled") // Not Scheduled, Scheduled, Out For Delivery, Delivered, Failed, Rescheduled
+  notes              String?
+  items              OrderItem[]
+  payments           Payment[]
+  deliveries         Delivery[]
+  installments       Installment[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  productCode String
+  productName String
+  quantity    Float
+  unitPrice   Float
+  discount    Float    @default(0.0)
+  lineTotal   Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  paymentNumber String   @unique
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id])
+  invoiceId     String?
+  invoice       Invoice? @relation(fields: [invoiceId], references: [id])
+  orderId       String?
+  order         Order?   @relation(fields: [orderId], references: [id])
+  date          DateTime @default(now())
+  amount        Float
+  paymentMethod String   // Cash, Card, Bank Transfer, Cheque, Online, Other
+  referenceNumber String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SupplierPayment {
+  id            String   @id @default(uuid())
+  paymentNumber String   @unique
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  purchaseId    String?
+  purchase      Purchase? @relation(fields: [purchaseId], references: [id])
+  date          DateTime @default(now())
+  amount        Float
+  paymentMethod String   // Cash, Card, Bank Transfer, Cheque, Online, Other
+  referenceNumber String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Purchase {
+  id             String         @id @default(uuid())
+  purchaseNumber String         @unique
+  supplierId     String
+  supplier       Supplier       @relation(fields: [supplierId], references: [id])
+  date           DateTime       @default(now())
+  subtotal       Float
+  transportCost  Float          @default(0.0)
+  loadingCost    Float          @default(0.0)
+  otherCost      Float          @default(0.0)
+  grandTotal     Float
+  paidAmount     Float          @default(0.0)
+  balanceAmount  Float          @default(0.0)
+  paymentStatus  String         // PAID, PARTIAL, CREDIT, CANCELLED
+  notes          String?
+  items          PurchaseItem[]
+  payments       SupplierPayment[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model PurchaseItem {
+  id          String   @id @default(uuid())
+  purchaseId  String
+  purchase    Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  productCode String
+  productName String
+  quantity    Float
+  costPrice   Float
+  lineTotal   Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Expense {
+  id            String   @id @default(uuid())
+  date          DateTime @default(now())
+  expenseType   String   // SHOP_RENT, STAFF_SALARY, TRANSPORT, DELIVERY_FUEL, LOADING, UNLOADING, REPAIR, ELECTRICITY, MARKETING, INTERNET, OTHER
+  amount        Float
+  paidTo        String
+  paymentMethod String   // Cash, Card, Bank Transfer, Cheque, Online, Other
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Delivery {
+  id             String   @id @default(uuid())
+  deliveryNumber String   @unique
+  invoiceId      String?
+  invoice        Invoice? @relation(fields: [invoiceId], references: [id])
+  orderId        String?
+  order          Order?   @relation(fields: [orderId], references: [id])
+  customerName   String
+  phone          String
+  address        String
+  deliveryDate   DateTime
+  deliveryTime   String?
+  driverName     String?
+  vehicleNumber  String?
+  deliveryCharge Float    @default(0.0)
+  deliveryStatus String   @default("Pending") // Pending, Scheduled, Out For Delivery, Delivered, Failed, Rescheduled
+  deliveredBy    String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Warranty {
+  id            String       @id @default(uuid())
+  invoiceItemId String
+  invoiceItem   InvoiceItem  @relation(fields: [invoiceItemId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id])
+  customerId    String
+  customer      Customer     @relation(fields: [customerId], references: [id])
+  startDate     DateTime     @default(now())
+  endDate       DateTime
+  period        String       // e.g. "12 Months"
+  status        String       @default("Active") // Active, Expired
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model StockMovement {
+  id            String   @id @default(uuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  movementType  String   // PURCHASE_IN, SALE_OUT, ORDER_RESERVE, ORDER_RELEASE, RETURN_IN, ADJUSTMENT_IN, ADJUSTMENT_OUT
+  referenceType String   // INVOICE, PURCHASE, ORDER, MANUAL
+  referenceId   String
+  quantityIn    Float    @default(0.0)
+  quantityOut   Float    @default(0.0)
+  balanceAfter  Float
+  date          DateTime @default(now())
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Installment {
+  id                String    @id @default(uuid())
+  customerId        String
+  customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoiceId         String?
+  invoice           Invoice?  @relation(fields: [invoiceId], references: [id])
+  orderId           String?
+  order             Order?    @relation(fields: [orderId], references: [id])
+  totalBalance      Float
+  installmentAmount Float
+  dueDate           DateTime
+  status            String    @default("Pending") // Pending, Paid, Overdue
+  paymentDate       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
