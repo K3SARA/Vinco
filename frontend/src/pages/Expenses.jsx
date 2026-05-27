@@ -20,8 +20,10 @@ export default function Expenses() {
 
   // Form state
   const [expForm, setExpForm] = useState({
-    category: 'Rent',
+    expenseType: 'Rent',
     amount: '',
+    paidTo: '',
+    paymentMethod: 'Cash',
     description: '',
     date: new Date().toISOString().split('T')[0]
   });
@@ -40,9 +42,9 @@ export default function Expenses() {
   const loadExpenses = async () => {
     setLoading(true);
     try {
-      const query = `?search=${searchTerm}&category=${categoryFilter}`;
+      const query = `?search=${encodeURIComponent(searchTerm)}&expenseType=${encodeURIComponent(categoryFilter)}`;
       const res = await api.get(`/expenses${query}`);
-      setExpenses(res.data);
+      setExpenses(Array.isArray(res.data) ? res.data : (res.data.expenses || []));
     } catch (err) {
       console.error(err);
       showAlert('error', 'Failed to retrieve expenses records.');
@@ -63,8 +65,10 @@ export default function Expenses() {
   const handleOpenAdd = () => {
     setSelectedExpense(null);
     setExpForm({
-      category: 'Rent',
+      expenseType: 'Rent',
       amount: '',
+      paidTo: '',
+      paymentMethod: 'Cash',
       description: '',
       date: new Date().toISOString().split('T')[0]
     });
@@ -80,6 +84,10 @@ export default function Expenses() {
     }
     if (!expForm.description.trim()) {
       showAlert('error', 'Description is required.');
+      return;
+    }
+    if (!expForm.paidTo.trim()) {
+      showAlert('error', 'Paid to is required.');
       return;
     }
 
@@ -104,7 +112,7 @@ export default function Expenses() {
     }
   };
 
-  const totalExpenseAmount = expenses.reduce((acc, exp) => acc + exp.amount, 0);
+  const totalExpenseAmount = expenses.reduce((acc, exp) => acc + Number(exp.amount || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -199,11 +207,14 @@ export default function Expenses() {
                     <td className="p-3.5 font-bold text-stone-850">{new Date(e.date).toLocaleDateString()}</td>
                     <td className="p-3.5">
                       <span className="inline-flex rounded bg-stone-100 px-2 py-0.5 text-[10px] font-bold uppercase text-stone-750">
-                        {e.category}
+                        {e.expenseType}
                       </span>
                     </td>
-                    <td className="p-3.5 text-stone-550 max-w-md truncate">{e.description}</td>
-                    <td className="p-3.5 text-right font-black text-red-750">Rs. {e.amount.toLocaleString()}</td>
+                    <td className="p-3.5 text-stone-550 max-w-md truncate">
+                      <span className="font-bold text-stone-700">{e.description}</span>
+                      <span className="block text-[10px] text-stone-400">Paid to: {e.paidTo} | {e.paymentMethod}</span>
+                    </td>
+                    <td className="p-3.5 text-right font-black text-red-750">Rs. {Number(e.amount || 0).toLocaleString()}</td>
                     <td className="p-3.5 text-center">
                       {user?.role === 'ADMIN' && (
                         <button
@@ -242,8 +253,8 @@ export default function Expenses() {
               <div>
                 <label className="block text-stone-650">Expense Category *</label>
                 <select
-                  value={expForm.category}
-                  onChange={(e) => setExpForm({ ...expForm, category: e.target.value })}
+                  value={expForm.expenseType}
+                  onChange={(e) => setExpForm({ ...expForm, expenseType: e.target.value })}
                   className="mt-1.5 block w-full rounded-lg border border-stone-200 px-3 py-2 bg-stone-50 text-stone-850 font-bold"
                 >
                   <option value="Rent">Rent</option>
@@ -267,6 +278,35 @@ export default function Expenses() {
                   className="mt-1.5 block w-full rounded-lg border border-stone-200 px-3 py-2 text-stone-900 font-extrabold text-base"
                   placeholder="0.00"
                 />
+              </div>
+
+              <div>
+                <label className="block text-stone-600">Paid To *</label>
+                <input
+                  type="text"
+                  required
+                  value={expForm.paidTo}
+                  onChange={(e) => setExpForm({ ...expForm, paidTo: e.target.value })}
+                  className="mt-1.5 block w-full rounded-lg border border-stone-200 px-3 py-2 bg-stone-50 text-stone-800"
+                  placeholder="e.g. CEB, Landlord, Driver, Staff member"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-600">Payment Method *</label>
+                <select
+                  required
+                  value={expForm.paymentMethod}
+                  onChange={(e) => setExpForm({ ...expForm, paymentMethod: e.target.value })}
+                  className="mt-1.5 block w-full rounded-lg border border-stone-200 px-3 py-2 bg-stone-50 text-stone-850 font-bold"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="Card">Card</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Online">Online</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
 
               <div>

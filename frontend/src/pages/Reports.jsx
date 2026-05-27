@@ -32,10 +32,48 @@ export default function Reports() {
   const loadReports = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/reports/summary?startDate=${startDate}&endDate=${endDate}`);
-      setReportsData(res.data);
+      const [profitRes, customerRes, supplierRes, bestSellingRes] = await Promise.all([
+        api.get(`/reports/profit-loss?dateFrom=${startDate}&dateTo=${endDate}`),
+        api.get('/reports/customer-balances?debtOnly=true'),
+        api.get('/reports/supplier-balances?payableOnly=true'),
+        api.get('/reports/best-selling'),
+      ]);
+
+      const totalOutstandingReceivables = (customerRes.data || [])
+        .reduce((acc, item) => acc + Number(item.receivableBalance || 0), 0);
+      const totalOutstandingPayables = (supplierRes.data || [])
+        .reduce((acc, item) => acc + Number(item.payableBalance || 0), 0);
+
+      setReportsData({
+        revenue: Number(profitRes.data?.salesTotal || 0),
+        costOfGoodsSold: Number(profitRes.data?.costOfGoodsSold || 0),
+        operatingExpenses: Number(profitRes.data?.expensesTotal || 0),
+        grossProfit: Number(profitRes.data?.grossProfit || 0),
+        netProfit: Number(profitRes.data?.netProfit || 0),
+        receivablesCollected: 0,
+        totalOutstandingReceivables,
+        totalOutstandingPayables,
+        salesByMethod: [],
+        topSellingProducts: (bestSellingRes.data || []).slice(0, 5).map((item) => ({
+          productName: item.name,
+          productCode: item.code,
+          qtySold: item.quantitySold,
+        })),
+      });
     } catch (err) {
       console.error(err);
+      setReportsData({
+        revenue: 0,
+        costOfGoodsSold: 0,
+        operatingExpenses: 0,
+        grossProfit: 0,
+        netProfit: 0,
+        receivablesCollected: 0,
+        totalOutstandingReceivables: 0,
+        totalOutstandingPayables: 0,
+        salesByMethod: [],
+        topSellingProducts: [],
+      });
     } finally {
       setLoading(false);
     }
@@ -212,7 +250,7 @@ export default function Reports() {
               {salesByMethod.map((item) => (
                 <div key={item.paymentMethod} className="flex justify-between items-center p-2 bg-stone-50 border border-stone-150/40 rounded">
                   <span>{item.paymentMethod}</span>
-                  <span className="font-bold text-stone-850">Rs. {item._sum.paidAmount?.toLocaleString() || 0}</span>
+                  <span className="font-bold text-stone-850">Rs. {Number(item.paidAmount || item._sum?.paidAmount || 0).toLocaleString()}</span>
                 </div>
               ))}
               {salesByMethod.length === 0 && (

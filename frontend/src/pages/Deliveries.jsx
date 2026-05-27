@@ -59,7 +59,7 @@ export default function Deliveries() {
   const handleOpenStatusModal = (deliv) => {
     setSelectedDelivery(deliv);
     setNewStatus(deliv.deliveryStatus);
-    setDriverNotes(deliv.driverNotes || '');
+    setDriverNotes(deliv.notes || '');
     setStatusModalOpen(true);
   };
 
@@ -68,7 +68,7 @@ export default function Deliveries() {
     try {
       await api.post(`/deliveries/${selectedDelivery.id}/status`, {
         deliveryStatus: newStatus,
-        driverNotes
+        notes: driverNotes
       });
       showAlert('success', 'Delivery status updated successfully.');
       setStatusModalOpen(false);
@@ -124,7 +124,8 @@ export default function Deliveries() {
         >
           <option value="">{translate("All Dispatches Status", "සියලුම තත්ත්වයන්")}</option>
           <option value="Pending">Pending (ප්‍රමාදිත)</option>
-          <option value="Dispatched">Dispatched (පිටත් කරන ලද)</option>
+          <option value="Scheduled">Scheduled</option>
+          <option value="Out For Delivery">Out For Delivery</option>
           <option value="Delivered">Delivered (ලැබී ඇත)</option>
           <option value="Failed">Failed (නොලැබුණි)</option>
         </select>
@@ -155,7 +156,8 @@ export default function Deliveries() {
                 deliveries.map((d) => {
                   const statusColors = {
                     Pending: 'bg-amber-100 text-amber-850',
-                    Dispatched: 'bg-blue-100 text-blue-800',
+                    Scheduled: 'bg-blue-100 text-blue-800',
+                    'Out For Delivery': 'bg-blue-100 text-blue-800',
                     Delivered: 'bg-emerald-100 text-emerald-800',
                     Failed: 'bg-red-100 text-red-800'
                   };
@@ -169,7 +171,7 @@ export default function Deliveries() {
                         <p className="font-bold">{d.driverName || 'Unassigned'}</p>
                         <p className="text-[10px] text-stone-450">{d.vehicleNumber || 'No vehicle'}</p>
                       </td>
-                      <td className="p-3.5 text-stone-550 italic max-w-xs truncate">{d.driverNotes || '-'}</td>
+                      <td className="p-3.5 text-stone-550 italic max-w-xs truncate">{d.notes || '-'}</td>
                       <td className="p-3.5">
                         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${statusColors[d.deliveryStatus] || 'bg-stone-100 text-stone-800'}`}>
                           {d.deliveryStatus}
@@ -226,7 +228,8 @@ export default function Deliveries() {
                   className="mt-1 block w-full rounded-lg border border-stone-200 px-3 py-2 bg-stone-50 text-stone-850 font-bold"
                 >
                   <option value="Pending">Pending (ප්‍රමාදිත)</option>
-                  <option value="Dispatched">Dispatched (පිටත් කරන ලද)</option>
+                  <option value="Scheduled">Scheduled</option>
+                  <option value="Out For Delivery">Out For Delivery</option>
                   <option value="Delivered">Delivered (ලැබී ඇත)</option>
                   <option value="Failed">Failed (නොලැබුණි)</option>
                 </select>

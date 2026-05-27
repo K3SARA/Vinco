@@ -47,7 +47,7 @@ export default function Settings() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const bizRes = await api.get('/settings');
+      const bizRes = await api.get('/settings/business');
       if (bizRes.data) {
         setBizInfo(bizRes.data);
         setBizForm({
@@ -62,11 +62,21 @@ export default function Settings() {
       }
 
       if (user?.role === 'ADMIN') {
-        const usersRes = await api.get('/auth/users');
+        const usersRes = await api.get('/users');
         setUsers(usersRes.data);
-        
-        const statsRes = await api.get('/settings/stats');
-        setStats(statsRes.data);
+
+        const [invoicesRes, productsRes, customersRes, suppliersRes] = await Promise.all([
+          api.get('/invoices'),
+          api.get('/products'),
+          api.get('/customers'),
+          api.get('/suppliers'),
+        ]);
+        setStats({
+          totalInvoices: Array.isArray(invoicesRes.data) ? invoicesRes.data.length : 0,
+          totalProducts: Array.isArray(productsRes.data) ? productsRes.data.length : 0,
+          totalCustomers: Array.isArray(customersRes.data) ? customersRes.data.length : 0,
+          totalSuppliers: Array.isArray(suppliersRes.data) ? suppliersRes.data.length : 0,
+        });
       }
     } catch (err) {
       console.error(err);
@@ -87,7 +97,7 @@ export default function Settings() {
   const handleBizSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.post('/settings', bizForm);
+      const res = await api.put('/settings/business', bizForm);
       setBizInfo(res.data);
       showAlert('success', 'Business settings details updated successfully.');
     } catch (err) {
@@ -103,11 +113,11 @@ export default function Settings() {
     }
 
     try {
-      await api.post('/auth/register', userForm);
+      await api.post('/users', userForm);
       showAlert('success', `User account '${userForm.username}' registered successfully.`);
       setUserForm({ name: '', username: '', password: '', role: 'CASHIER' });
       // Reload user list
-      const usersRes = await api.get('/auth/users');
+      const usersRes = await api.get('/users');
       setUsers(usersRes.data);
     } catch (err) {
       showAlert('error', err.response?.data?.error || 'User registration failed.');
@@ -122,9 +132,9 @@ export default function Settings() {
     if (!window.confirm('Delete this user login account permanently?')) return;
 
     try {
-      await api.delete(`/auth/users/${id}`);
+      await api.delete(`/users/${id}`);
       showAlert('success', 'User account deleted.');
-      const usersRes = await api.get('/auth/users');
+      const usersRes = await api.get('/users');
       setUsers(usersRes.data);
     } catch (err) {
       showAlert('error', err.response?.data?.error || 'Failed to delete user.');

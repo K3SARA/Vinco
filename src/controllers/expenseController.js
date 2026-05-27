@@ -3,12 +3,13 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export async function getExpenses(req, res) {
-  const { expenseType, dateFrom, dateTo } = req.query;
+  const { expenseType, category, search, dateFrom, dateTo } = req.query;
 
   try {
     const where = {};
-    if (expenseType) {
-      where.expenseType = expenseType;
+    const selectedType = expenseType || category;
+    if (selectedType) {
+      where.expenseType = selectedType;
     }
 
     if (dateFrom || dateTo) {
@@ -21,10 +22,20 @@ export async function getExpenses(req, res) {
       }
     }
 
-    const expenses = await prisma.expense.findMany({
+    let expenses = await prisma.expense.findMany({
       where,
       orderBy: { date: 'desc' },
     });
+
+    if (search) {
+      const q = search.toLowerCase();
+      expenses = expenses.filter((exp) =>
+        (exp.description && exp.description.toLowerCase().includes(q)) ||
+        (exp.paidTo && exp.paidTo.toLowerCase().includes(q)) ||
+        (exp.expenseType && exp.expenseType.toLowerCase().includes(q)) ||
+        (exp.paymentMethod && exp.paymentMethod.toLowerCase().includes(q))
+      );
+    }
 
     const total = expenses.reduce((acc, exp) => acc + exp.amount, 0);
 
