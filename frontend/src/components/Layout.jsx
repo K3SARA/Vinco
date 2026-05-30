@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, ShoppingCart, Package, Users, FileText, 
   Settings, LogOut, Menu, X, FileMinus, Award, Truck, DollarSign,
-  Briefcase, ShieldAlert, Languages, ListCollapse, ChevronRight
+  Briefcase, ShieldAlert, Languages, Hammer
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -115,6 +115,13 @@ export default function Layout({ children }) {
       siLabel: 'ව්‍යාපාරික වියදම්', 
       icon: ShieldAlert, 
       roles: ['ADMIN', 'CASHIER'] 
+    },
+    {
+      path: '/carpenters',
+      label: 'Carpenter Payments',
+      siLabel: 'Carpenter Payments',
+      icon: Hammer,
+      roles: ['ADMIN', 'CASHIER']
     },
     { 
       path: '/reports', 

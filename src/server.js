@@ -24,6 +24,7 @@ import * as expenses from './controllers/expenseController.js';
 import * as settings from './controllers/settingsController.js';
 import * as reports from './controllers/reportController.js';
 import * as materials from './controllers/materialController.js';
+import * as carpenters from './controllers/carpenterController.js';
 
 // Auth middleware
 import { authenticateToken, authorizeRoles } from './middleware/auth.js';
@@ -165,6 +166,15 @@ app.get('/api/expenses', authenticateToken, expenses.getExpenses);
 app.post('/api/expenses', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), expenses.createExpense);
 app.put('/api/expenses/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), expenses.updateExpense);
 app.delete('/api/expenses/:id', authenticateToken, authorizeRoles('ADMIN'), expenses.deleteExpense);
+
+// Carpenters & daily worker payments
+app.get('/api/carpenters', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.getCarpenters);
+app.post('/api/carpenters', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.createCarpenter);
+app.put('/api/carpenters/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.updateCarpenter);
+app.delete('/api/carpenters/:id', authenticateToken, authorizeRoles('ADMIN'), carpenters.deleteCarpenter);
+app.get('/api/carpenters/:id/payments', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.getCarpenterPayments);
+app.post('/api/carpenters/:id/payments', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.addCarpenterPayment);
+app.delete('/api/carpenter-payments/:id', authenticateToken, authorizeRoles('ADMIN'), carpenters.deleteCarpenterPayment);
 
 // Reports
 app.get('/api/reports/daily-sales', authenticateToken, reports.getDailySalesReport);

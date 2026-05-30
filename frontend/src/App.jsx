@@ -17,6 +17,7 @@ import Deliveries from './pages/Deliveries';
 import Suppliers from './pages/Suppliers';
 import Purchases from './pages/Purchases';
 import Expenses from './pages/Expenses';
+import Carpenters from './pages/Carpenters';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
@@ -63,6 +64,7 @@ export default function App() {
             
             {/* Operating Overheads Ledger */}
             <Route path="expenses" element={<Expenses />} />
+            <Route path="carpenters" element={<Carpenters />} />
             
             {/* Analytical Performance Reports */}
             <Route path="reports" element={<Reports />} />

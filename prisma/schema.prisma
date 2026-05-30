@@ -385,6 +385,27 @@ model Expense {
   updatedAt     DateTime @updatedAt
 }
 
+model Carpenter {
+  id                  String             @id @default(uuid())
+  name                String
+  defaultDailyPayment Float              @default(0.0)
+  active              Boolean            @default(true)
+  payments            CarpenterPayment[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model CarpenterPayment {
+  id          String    @id @default(uuid())
+  carpenterId String
+  carpenter   Carpenter @relation(fields: [carpenterId], references: [id], onDelete: Cascade)
+  date        DateTime  @default(now())
+  amount      Float
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model Delivery {
   id             String   @id @default(uuid())
   deliveryNumber String   @unique
