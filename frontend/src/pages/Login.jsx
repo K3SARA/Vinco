@@ -250,7 +250,7 @@ export default function Login() {
         )}
 
         <div className="pt-2 text-center text-[10px] text-stone-500 font-medium border-t border-stone-850/50">
-          Alight Furniture System. Offline Localhost Client Session.
+          Alight Furniture Billing System.
         </div>
       </div>
     </div>
