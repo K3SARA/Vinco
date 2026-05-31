@@ -48,6 +48,8 @@ export default function Reports() {
         revenue: Number(profitRes.data?.salesTotal || 0),
         costOfGoodsSold: Number(profitRes.data?.costOfGoodsSold || 0),
         operatingExpenses: Number(profitRes.data?.expensesTotal || 0),
+        shopOperatingExpenses: Number(profitRes.data?.shopExpensesTotal || 0),
+        carpenterNetExpense: Number(profitRes.data?.carpenterNetExpense || 0),
         grossProfit: Number(profitRes.data?.grossProfit || 0),
         netProfit: Number(profitRes.data?.netProfit || 0),
         receivablesCollected: 0,
@@ -66,6 +68,8 @@ export default function Reports() {
         revenue: 0,
         costOfGoodsSold: 0,
         operatingExpenses: 0,
+        shopOperatingExpenses: 0,
+        carpenterNetExpense: 0,
         grossProfit: 0,
         netProfit: 0,
         receivablesCollected: 0,
@@ -95,6 +99,8 @@ export default function Reports() {
     revenue,
     costOfGoodsSold,
     operatingExpenses,
+    shopOperatingExpenses,
+    carpenterNetExpense,
     grossProfit,
     netProfit,
     receivablesCollected,
@@ -170,7 +176,7 @@ export default function Reports() {
           <p className="text-xl font-black text-stone-850 mt-2.5">
             Rs. {operatingExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </p>
-          <span className="text-[10px] text-stone-400 font-medium">Shop overheads and bills</span>
+          <span className="text-[10px] text-stone-400 font-medium">Shop overheads and carpenter net payments</span>
         </div>
 
         {/* NET PROFIT */}
@@ -212,7 +218,17 @@ export default function Reports() {
               <span>Rs. {grossProfit.toLocaleString()}</span>
             </div>
             <div className="py-2.5 flex justify-between">
-              <span>Less: Operating Expenses (D):</span>
+              <span>Less: Shop Operating Expenses (D1):</span>
+              <span className="text-red-600">Rs. {shopOperatingExpenses.toLocaleString()}</span>
+            </div>
+            <div className="py-2.5 flex justify-between">
+              <span>Less: Carpenter Net Payments (D2):</span>
+              <span className={carpenterNetExpense >= 0 ? 'text-red-600' : 'text-emerald-700'}>
+                Rs. {carpenterNetExpense.toLocaleString()}
+              </span>
+            </div>
+            <div className="py-2.5 flex justify-between">
+              <span>Total Operating Expenses (D = D1 + D2):</span>
               <span className="text-red-600">Rs. {operatingExpenses.toLocaleString()}</span>
             </div>
             <div className="py-3 flex justify-between border-t-2 border-stone-200 bg-stone-100 px-2.5 rounded-lg text-sm font-black text-stone-900">

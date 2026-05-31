@@ -18,11 +18,11 @@ api.interceptors.request.use(
   }
 );
 
-// Optional: Interceptor to redirect to login on 401 Unauthorized
+// Redirect to login when a session is missing, invalid, or expired.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
       localStorage.removeItem('alight_token');
       localStorage.removeItem('alight_user');
       // If we are not on the login page, redirect

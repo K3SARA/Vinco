@@ -1,0 +1,2 @@
+ALTER TABLE "CarpenterPayment"
+ADD COLUMN "transactionType" TEXT NOT NULL DEFAULT 'PAYMENT';

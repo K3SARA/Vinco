@@ -19,6 +19,26 @@ function getMonthRange() {
   return { start, end };
 }
 
+function summarizeCarpenterTransactions(payments = []) {
+  const summary = {
+    totalPaid: 0,
+    totalCredit: 0,
+    netExpense: 0,
+  };
+
+  for (const payment of payments) {
+    const amount = Number(payment.amount || 0);
+    if (payment.transactionType === 'CREDIT') {
+      summary.totalCredit += amount;
+    } else {
+      summary.totalPaid += amount;
+    }
+  }
+
+  summary.netExpense = summary.totalPaid - summary.totalCredit;
+  return summary;
+}
+
 export async function getDashboardStats(req, res) {
   try {
     const today = getTodayRange();
@@ -108,7 +128,14 @@ export async function getDashboardStats(req, res) {
         date: { gte: month.start, lte: month.end }
       }
     });
-    const totalExpenses = monthlyExpenses.reduce((acc, exp) => acc + exp.amount, 0);
+    const monthlyCarpenterTransactions = await prisma.carpenterPayment.findMany({
+      where: {
+        date: { gte: month.start, lte: month.end }
+      }
+    });
+    const shopExpensesTotal = monthlyExpenses.reduce((acc, exp) => acc + exp.amount, 0);
+    const carpenterSummary = summarizeCarpenterTransactions(monthlyCarpenterTransactions);
+    const totalExpenses = shopExpensesTotal + carpenterSummary.netExpense;
     const monthlyProfitLoss = monthlySales - monthlyCOGS - totalExpenses;
 
     // 10. Total Customer Receivable Balance (Sum of positive balances)
@@ -134,6 +161,9 @@ export async function getDashboardStats(req, res) {
       totalStockValue,
       monthlySales,
       monthlyProfitLoss,
+      monthlyCarpenterPayments: carpenterSummary.totalPaid,
+      monthlyCarpenterCredits: carpenterSummary.totalCredit,
+      monthlyCarpenterNetExpense: carpenterSummary.netExpense,
       totalReceivables,
       totalPayables
     });
@@ -259,10 +289,33 @@ export async function getMonthlySalesReport(req, res) {
       expensesGrouped[monthKey] += exp.amount;
     }
 
+    const carpenterPayments = await prisma.carpenterPayment.findMany();
+    const carpenterGrouped = {};
+    for (const payment of carpenterPayments) {
+      const year = payment.date.getFullYear();
+      const month = String(payment.date.getMonth() + 1).padStart(2, '0');
+      const monthKey = `${year}-${month}`;
+
+      if (!carpenterGrouped[monthKey]) {
+        carpenterGrouped[monthKey] = { totalPaid: 0, totalCredit: 0, netExpense: 0 };
+      }
+
+      if (payment.transactionType === 'CREDIT') {
+        carpenterGrouped[monthKey].totalCredit += payment.amount;
+      } else {
+        carpenterGrouped[monthKey].totalPaid += payment.amount;
+      }
+      carpenterGrouped[monthKey].netExpense = carpenterGrouped[monthKey].totalPaid - carpenterGrouped[monthKey].totalCredit;
+    }
+
     const reportData = Object.values(grouped).map(m => {
-      const monthlyExpense = expensesGrouped[m.month] || 0;
+      const shopExpense = expensesGrouped[m.month] || 0;
+      const carpenterNetExpense = carpenterGrouped[m.month]?.netExpense || 0;
+      const monthlyExpense = shopExpense + carpenterNetExpense;
       return {
         ...m,
+        shopExpenses: shopExpense,
+        carpenterNetExpense,
         expenses: monthlyExpense,
         profitLoss: m.salesTotal - m.cogs - monthlyExpense
       };
@@ -437,18 +490,22 @@ export async function getProfitLossReport(req, res) {
   try {
     const invoiceWhere = { paymentStatus: { not: 'CANCELLED' } };
     const expenseWhere = {};
+    const carpenterPaymentWhere = {};
 
     if (dateFrom || dateTo) {
       invoiceWhere.date = {};
       expenseWhere.date = {};
+      carpenterPaymentWhere.date = {};
 
       if (dateFrom) {
         invoiceWhere.date.gte = new Date(dateFrom);
         expenseWhere.date.gte = new Date(dateFrom);
+        carpenterPaymentWhere.date.gte = new Date(dateFrom);
       }
       if (dateTo) {
         invoiceWhere.date.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
         expenseWhere.date.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+        carpenterPaymentWhere.date.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
       }
     }
 
@@ -459,6 +516,9 @@ export async function getProfitLossReport(req, res) {
 
     const expensesList = await prisma.expense.findMany({
       where: expenseWhere
+    });
+    const carpenterPayments = await prisma.carpenterPayment.findMany({
+      where: carpenterPaymentWhere
     });
 
     const salesTotal = invoices.reduce((acc, inv) => acc + inv.grandTotal, 0);
@@ -471,7 +531,9 @@ export async function getProfitLossReport(req, res) {
       }
     }
 
-    const totalExpenses = expensesList.reduce((acc, exp) => acc + exp.amount, 0);
+    const shopExpensesTotal = expensesList.reduce((acc, exp) => acc + exp.amount, 0);
+    const carpenterSummary = summarizeCarpenterTransactions(carpenterPayments);
+    const totalExpenses = shopExpensesTotal + carpenterSummary.netExpense;
 
     const grossProfit = salesTotal - costOfGoodsSold;
     const netProfit = grossProfit - totalExpenses;
@@ -484,12 +546,19 @@ export async function getProfitLossReport(req, res) {
       }
       expensesByType[exp.expenseType] += exp.amount;
     }
+    if (carpenterSummary.netExpense !== 0) {
+      expensesByType.CARPENTER_PAYMENTS = carpenterSummary.netExpense;
+    }
 
     return res.json({
       salesTotal,
       costOfGoodsSold,
       grossProfit,
       expensesTotal: totalExpenses,
+      shopExpensesTotal,
+      carpenterPaymentsTotal: carpenterSummary.totalPaid,
+      carpenterCreditsTotal: carpenterSummary.totalCredit,
+      carpenterNetExpense: carpenterSummary.netExpense,
       expensesByType,
       netProfit,
     });

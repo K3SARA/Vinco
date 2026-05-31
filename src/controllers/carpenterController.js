@@ -2,6 +2,42 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const CARPENTER_TRANSACTION_TYPES = new Set(['PAYMENT', 'CREDIT']);
+
+function normalizeCarpenterTransactionType(value = 'PAYMENT') {
+  const normalized = String(value || 'PAYMENT').trim().toUpperCase();
+  if (['RECEIVED', 'RECEIPT', 'DEDUCTION'].includes(normalized)) {
+    return 'CREDIT';
+  }
+  return normalized;
+}
+
+function getEmptyCarpenterAccountSummary() {
+  return {
+    totalPaid: 0,
+    totalCredit: 0,
+    netBalance: 0,
+  };
+}
+
+function summarizeCarpenterTransactions(payments = []) {
+  const summary = getEmptyCarpenterAccountSummary();
+
+  for (const payment of payments) {
+    const amount = Number(payment.amount || 0);
+    const transactionType = normalizeCarpenterTransactionType(payment.transactionType);
+
+    if (transactionType === 'CREDIT') {
+      summary.totalCredit += amount;
+    } else {
+      summary.totalPaid += amount;
+    }
+  }
+
+  summary.netBalance = summary.totalPaid - summary.totalCredit;
+  return summary;
+}
+
 export async function getCarpenters(req, res) {
   const { search = '', active = '' } = req.query;
 
@@ -17,7 +53,7 @@ export async function getCarpenters(req, res) {
       where,
       include: {
         payments: {
-          orderBy: { date: 'desc' },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
           take: 1,
         },
         _count: {
@@ -27,7 +63,36 @@ export async function getCarpenters(req, res) {
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
     });
 
-    return res.json(carpenters);
+    const summariesByCarpenter = new Map();
+
+    if (carpenters.length > 0) {
+      const groupedPayments = await prisma.carpenterPayment.groupBy({
+        by: ['carpenterId', 'transactionType'],
+        where: {
+          carpenterId: { in: carpenters.map((carpenter) => carpenter.id) },
+        },
+        _sum: { amount: true },
+      });
+
+      for (const group of groupedPayments) {
+        const summary = summariesByCarpenter.get(group.carpenterId) || getEmptyCarpenterAccountSummary();
+        const amount = Number(group._sum.amount || 0);
+        const transactionType = normalizeCarpenterTransactionType(group.transactionType);
+
+        if (transactionType === 'CREDIT') {
+          summary.totalCredit += amount;
+        } else {
+          summary.totalPaid += amount;
+        }
+        summary.netBalance = summary.totalPaid - summary.totalCredit;
+        summariesByCarpenter.set(group.carpenterId, summary);
+      }
+    }
+
+    return res.json(carpenters.map((carpenter) => ({
+      ...carpenter,
+      accountSummary: summariesByCarpenter.get(carpenter.id) || getEmptyCarpenterAccountSummary(),
+    })));
   } catch (error) {
     console.error('Get carpenters error:', error);
     return res.status(500).json({ error: 'Internal server error.' });
@@ -141,8 +206,14 @@ export async function getCarpenterPayments(req, res) {
       return res.status(404).json({ error: 'Carpenter not found.' });
     }
 
-    const totalPaid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    return res.json({ carpenter, payments, totalPaid });
+    const summary = summarizeCarpenterTransactions(payments);
+    return res.json({
+      carpenter,
+      payments,
+      totalPaid: summary.totalPaid,
+      totalCredit: summary.totalCredit,
+      netBalance: summary.netBalance,
+    });
   } catch (error) {
     console.error('Get carpenter payments error:', error);
     return res.status(500).json({ error: 'Internal server error.' });
@@ -151,11 +222,15 @@ export async function getCarpenterPayments(req, res) {
 
 export async function addCarpenterPayment(req, res) {
   const { id } = req.params;
-  const { amount, date, notes } = req.body;
+  const { amount, date, notes, transactionType = 'PAYMENT' } = req.body;
   const paymentAmount = parseFloat(amount);
+  const normalizedTransactionType = normalizeCarpenterTransactionType(transactionType);
 
   if (isNaN(paymentAmount) || paymentAmount <= 0) {
-    return res.status(400).json({ error: 'Payment amount must be greater than zero.' });
+    return res.status(400).json({ error: 'Transaction amount must be greater than zero.' });
+  }
+  if (!CARPENTER_TRANSACTION_TYPES.has(normalizedTransactionType)) {
+    return res.status(400).json({ error: 'Transaction type must be PAYMENT or CREDIT.' });
   }
 
   try {
@@ -168,6 +243,7 @@ export async function addCarpenterPayment(req, res) {
       data: {
         carpenterId: id,
         amount: paymentAmount,
+        transactionType: normalizedTransactionType,
         date: date ? new Date(date) : new Date(),
         notes: notes?.trim() || null,
       },
@@ -185,7 +261,7 @@ export async function deleteCarpenterPayment(req, res) {
 
   try {
     await prisma.carpenterPayment.delete({ where: { id } });
-    return res.json({ message: 'Carpenter payment deleted successfully.' });
+    return res.json({ message: 'Carpenter transaction deleted successfully.' });
   } catch (error) {
     console.error('Delete carpenter payment error:', error);
     return res.status(500).json({ error: error.message || 'Internal server error.' });

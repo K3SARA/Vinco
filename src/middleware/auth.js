@@ -26,7 +26,7 @@ export async function authenticateToken(req, res, next) {
     next();
   } catch (error) {
     console.error('JWT Verification Error:', error);
-    return res.status(403).json({ error: 'Invalid or expired access token.' });
+    return res.status(401).json({ error: 'Invalid or expired access token.' });
   }
 }
 
