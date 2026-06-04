@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import {
   ArrowDownLeft,
   ArrowUpRight,
   CalendarDays,
   CheckCircle,
   Edit2,
+  FileText,
   Hammer,
   Plus,
   Receipt,
@@ -18,6 +20,15 @@ import {
 const today = () => new Date().toISOString().split('T')[0];
 const formatCurrency = (amount) => `Rs. ${Number(amount || 0).toLocaleString()}`;
 const emptyAccountSummary = { totalPaid: 0, totalCredit: 0, netBalance: 0 };
+const emptyLedger = {
+  entries: [],
+  totalPaid: 0,
+  totalCredit: 0,
+  netBalance: 0,
+  openingBalance: 0,
+  closingBalance: 0,
+  accountBalance: 0,
+};
 
 const getAccountSummary = (carpenter) => ({
   ...emptyAccountSummary,
@@ -26,18 +37,36 @@ const getAccountSummary = (carpenter) => ({
 
 const isCreditTransaction = (transaction) => transaction?.transactionType === 'CREDIT';
 
+const getMonthRange = () => {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  return {
+    from: firstDay.toISOString().split('T')[0],
+    to: today(),
+  };
+};
+
+const getBalanceLabel = (balance) => {
+  if (balance > 0) return 'Advance balance';
+  if (balance < 0) return 'Credit balance';
+  return 'Balanced';
+};
+
 export default function Carpenters() {
   const { user } = useAuth();
   const [carpenters, setCarpenters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
   const [alertMsg, setAlertMsg] = useState({ type: '', text: '' });
 
   const [carpenterModalOpen, setCarpenterModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [selectedCarpenter, setSelectedCarpenter] = useState(null);
-  const [history, setHistory] = useState({ payments: [], totalPaid: 0, totalCredit: 0, netBalance: 0 });
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerFilters, setLedgerFilters] = useState({ from: '', to: '' });
+  const [ledger, setLedger] = useState(emptyLedger);
 
   const [carpenterForm, setCarpenterForm] = useState({
     name: '',
@@ -63,15 +92,15 @@ export default function Carpenters() {
     [carpenters]
   );
 
-  const showAlert = (type, text) => {
+  function showAlert(type, text) {
     setAlertMsg({ type, text });
     setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
-  };
+  }
 
   const loadCarpenters = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/carpenters?search=${encodeURIComponent(searchTerm)}`);
+      const res = await api.get(`/carpenters?search=${encodeURIComponent(debouncedSearchTerm)}`);
       setCarpenters(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error(err);
@@ -82,8 +111,10 @@ export default function Carpenters() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCarpenters();
-  }, [searchTerm]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm]);
 
   const openAddCarpenter = () => {
     setSelectedCarpenter(null);
@@ -140,6 +171,34 @@ export default function Carpenters() {
     setPaymentModalOpen(true);
   };
 
+  const loadLedger = async (carpenter = selectedCarpenter, filters = ledgerFilters) => {
+    if (!carpenter) return;
+
+    setLedgerLoading(true);
+
+    try {
+      const params = new URLSearchParams();
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const res = await api.get(`/carpenters/${carpenter.id}/ledger${query}`);
+
+      setLedger({
+        entries: res.data.entries || [],
+        totalPaid: Number(res.data.totalPaid || 0),
+        totalCredit: Number(res.data.totalCredit || 0),
+        netBalance: Number(res.data.netBalance || 0),
+        openingBalance: Number(res.data.openingBalance || 0),
+        closingBalance: Number(res.data.closingBalance || 0),
+        accountBalance: Number(res.data.accountBalance || 0),
+      });
+    } catch (err) {
+      showAlert('error', err.response?.data?.error || 'Failed to load carpenter ledger.');
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
   const submitPayment = async (event) => {
     event.preventDefault();
     const amount = parseFloat(paymentForm.amount);
@@ -155,27 +214,38 @@ export default function Carpenters() {
       showAlert('success', paymentForm.transactionType === 'CREDIT' ? 'Carpenter credit recorded.' : 'Carpenter payment recorded.');
       setPaymentModalOpen(false);
       loadCarpenters();
+      if (historyModalOpen) {
+        loadLedger(selectedCarpenter, ledgerFilters);
+      }
     } catch (err) {
       showAlert('error', err.response?.data?.error || 'Failed to record carpenter transaction.');
     }
   };
 
-  const openHistory = async (carpenter) => {
+  const openLedger = async (carpenter) => {
+    const filters = { from: '', to: '' };
     setSelectedCarpenter(carpenter);
-    setHistory({ payments: [], totalPaid: 0, totalCredit: 0, netBalance: 0 });
+    setLedger(emptyLedger);
+    setLedgerFilters(filters);
     setHistoryModalOpen(true);
+    loadLedger(carpenter, filters);
+  };
 
-    try {
-      const res = await api.get(`/carpenters/${carpenter.id}/payments`);
-      setHistory({
-        payments: res.data.payments || [],
-        totalPaid: Number(res.data.totalPaid || 0),
-        totalCredit: Number(res.data.totalCredit || 0),
-        netBalance: Number(res.data.netBalance || 0),
-      });
-    } catch (err) {
-      showAlert('error', err.response?.data?.error || 'Failed to load carpenter history.');
-    }
+  const applyLedgerPreset = (preset) => {
+    if (!selectedCarpenter) return;
+
+    const filters = preset === 'today'
+      ? { from: today(), to: today() }
+      : preset === 'month'
+        ? getMonthRange()
+        : { from: '', to: '' };
+
+    setLedgerFilters(filters);
+    loadLedger(selectedCarpenter, filters);
+  };
+
+  const applyLedgerFilters = () => {
+    loadLedger(selectedCarpenter, ledgerFilters);
   };
 
   const deleteCarpenter = async (carpenter) => {
@@ -197,7 +267,7 @@ export default function Carpenters() {
       await api.delete(`/carpenter-payments/${paymentId}`);
       showAlert('success', 'Carpenter transaction deleted.');
       if (selectedCarpenter) {
-        openHistory(selectedCarpenter);
+        loadLedger(selectedCarpenter, ledgerFilters);
       }
       loadCarpenters();
     } catch (err) {
@@ -341,11 +411,11 @@ export default function Carpenters() {
                             Credit
                           </button>
                           <button
-                            onClick={() => openHistory(carpenter)}
+                            onClick={() => openLedger(carpenter)}
                             className="inline-flex items-center gap-1 rounded-lg border border-stone-200 px-2 py-1 text-[10px] font-bold text-stone-600 hover:bg-stone-100"
                           >
-                            <CalendarDays size={13} />
-                            Report
+                            <FileText size={13} />
+                            Ledger
                           </button>
                           <button
                             onClick={() => openEditCarpenter(carpenter)}
@@ -524,92 +594,130 @@ export default function Carpenters() {
       )}
 
       {historyModalOpen && selectedCarpenter && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-4xl rounded-xl bg-white p-6 shadow-2xl border border-stone-200">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+        <div className="carpenter-ledger-overlay">
+          <div className="carpenter-ledger-sheet">
+            <div className="carpenter-ledger-handle" />
+
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-base font-bold text-stone-850 flex items-center gap-1.5">
-                  <CalendarDays size={18} className="text-wood-650" />
-                  {selectedCarpenter.name} Account Report
+                <p className="text-[10px] font-black uppercase tracking-wide text-stone-400">Carpenter Ledger</p>
+                <h3 className="mt-1 flex items-center gap-2 text-lg font-black text-stone-850">
+                  <FileText size={19} className="text-wood-650" />
+                  {selectedCarpenter.name}
                 </h3>
+                <p className="mt-1 text-[11px] font-bold text-stone-400">
+                  {ledger.entries.length} ledger entries
+                </p>
               </div>
-              <button onClick={() => setHistoryModalOpen(false)} className="text-stone-400 hover:text-stone-800">
+              <button type="button" onClick={() => setHistoryModalOpen(false)} className="carpenter-ledger-close">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-wood-100 bg-wood-50 p-3">
-                <p className="text-[10px] font-bold uppercase text-wood-700">Paid / Advances</p>
-                <p className="mt-1 text-lg font-black text-wood-800">{formatCurrency(history.totalPaid)}</p>
+            <div className="carpenter-ledger-balance">
+              <span>Current account</span>
+              <strong className={ledger.accountBalance >= 0 ? 'text-wood-800' : 'text-emerald-800'}>
+                {formatCurrency(Math.abs(ledger.accountBalance))}
+              </strong>
+              <small>{getBalanceLabel(ledger.accountBalance)}</small>
+            </div>
+
+            <div className="carpenter-ledger-summary">
+              <div>
+                <span>Opening</span>
+                <strong>{formatCurrency(Math.abs(ledger.openingBalance))}</strong>
               </div>
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                <p className="text-[10px] font-bold uppercase text-emerald-700">Received / Credits</p>
-                <p className="mt-1 text-lg font-black text-emerald-800">{formatCurrency(history.totalCredit)}</p>
+              <div>
+                <span>Paid</span>
+                <strong className="text-wood-800">{formatCurrency(ledger.totalPaid)}</strong>
               </div>
-              <div className="rounded-lg border border-stone-200 bg-stone-50 p-3">
-                <p className="text-[10px] font-bold uppercase text-stone-500">Net Account Balance</p>
-                <p className={`mt-1 text-lg font-black ${history.netBalance >= 0 ? 'text-wood-800' : 'text-emerald-800'}`}>
-                  {formatCurrency(Math.abs(history.netBalance))}
-                </p>
-                <p className="text-[10px] font-bold text-stone-400">
-                  {history.netBalance > 0 ? 'Advance balance' : history.netBalance < 0 ? 'Credit balance' : 'Balanced'}
-                </p>
+              <div>
+                <span>Credit</span>
+                <strong className="text-emerald-800">{formatCurrency(ledger.totalCredit)}</strong>
+              </div>
+              <div>
+                <span>Closing</span>
+                <strong>{formatCurrency(Math.abs(ledger.closingBalance))}</strong>
               </div>
             </div>
 
-            <div className="mt-4 overflow-y-auto max-h-96 border border-stone-150 rounded-lg">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-stone-100 text-stone-400 font-bold uppercase border-b border-stone-200">
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Type</th>
-                    <th className="p-3">Details</th>
-                    <th className="p-3 text-right">Paid / Advance</th>
-                    <th className="p-3 text-right">Received / Credit</th>
-                    {user?.role === 'ADMIN' && <th className="p-3 text-center">Delete</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 font-semibold">
-                  {history.payments.length === 0 ? (
-                    <tr>
-                      <td colSpan={user?.role === 'ADMIN' ? 6 : 5} className="p-8 text-center text-stone-400 font-bold">
-                        No transactions recorded for this carpenter yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    history.payments.map((payment) => (
-                      <tr key={payment.id} className="hover:bg-stone-50">
-                        <td className="p-3 text-stone-600 font-bold">{new Date(payment.date).toLocaleDateString()}</td>
-                        <td className="p-3">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            isCreditTransaction(payment) ? 'bg-emerald-100 text-emerald-800' : 'bg-wood-100 text-wood-800'
-                          }`}>
-                            {isCreditTransaction(payment) ? 'Credit' : 'Payment'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-stone-600 max-w-md">{payment.notes || '-'}</td>
-                        <td className="p-3 text-right font-black text-wood-700">
-                          {isCreditTransaction(payment) ? '-' : formatCurrency(payment.amount)}
-                        </td>
-                        <td className="p-3 text-right font-black text-emerald-700">
-                          {isCreditTransaction(payment) ? formatCurrency(payment.amount) : '-'}
-                        </td>
-                        {user?.role === 'ADMIN' && (
-                          <td className="p-3 text-center">
-                            <button
-                              onClick={() => deletePayment(payment.id)}
-                              className="p-1 rounded border border-stone-200 text-stone-400 hover:text-red-650 hover:bg-red-50"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="carpenter-ledger-actions">
+              <button type="button" onClick={() => openPayment(selectedCarpenter, 'PAYMENT')} className="pay">
+                <ArrowUpRight size={16} />
+                Pay
+              </button>
+              <button type="button" onClick={() => openPayment(selectedCarpenter, 'CREDIT')} className="credit">
+                <ArrowDownLeft size={16} />
+                Credit
+              </button>
+            </div>
+
+            <div className="carpenter-ledger-filters">
+              <div className="carpenter-ledger-presets">
+                <button type="button" onClick={() => applyLedgerPreset('today')}>Today</button>
+                <button type="button" onClick={() => applyLedgerPreset('month')}>Month</button>
+                <button type="button" onClick={() => applyLedgerPreset('all')}>All</button>
+              </div>
+              <div className="carpenter-ledger-date-row">
+                <label>
+                  <CalendarDays size={13} />
+                  <input
+                    type="date"
+                    value={ledgerFilters.from}
+                    onChange={(event) => setLedgerFilters({ ...ledgerFilters, from: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <CalendarDays size={13} />
+                  <input
+                    type="date"
+                    value={ledgerFilters.to}
+                    onChange={(event) => setLedgerFilters({ ...ledgerFilters, to: event.target.value })}
+                  />
+                </label>
+                <button type="button" onClick={applyLedgerFilters}>Apply</button>
+              </div>
+            </div>
+
+            <div className="ledger-card-list carpenter-ledger-list">
+              {ledgerLoading ? (
+                <div className="ledger-empty-card">Loading carpenter ledger...</div>
+              ) : ledger.entries.length === 0 ? (
+                <div className="ledger-empty-card">No ledger entries for this period.</div>
+              ) : (
+                ledger.entries.map((entry) => (
+                  <article key={entry.id} className="ledger-card carpenter">
+                    <div className="ledger-card-main">
+                      <div>
+                        <strong>{entry.referenceNo}</strong>
+                        <span>{new Date(entry.date).toLocaleString()}</span>
+                      </div>
+                      <span className="ledger-type">{isCreditTransaction(entry) ? 'Credit' : 'Payment'}</span>
+                    </div>
+                    <p>{entry.description}</p>
+                    <div className="ledger-amount-grid">
+                      <div className="debit">
+                        <span>Paid</span>
+                        <strong>{entry.paid > 0 ? `+ ${formatCurrency(entry.paid)}` : '-'}</strong>
+                      </div>
+                      <div className="credit">
+                        <span>Credit</span>
+                        <strong>{entry.credit > 0 ? `- ${formatCurrency(entry.credit)}` : '-'}</strong>
+                      </div>
+                      <div>
+                        <span>Balance</span>
+                        <strong>{formatCurrency(Math.abs(entry.balanceAfter))}</strong>
+                      </div>
+                    </div>
+                    {user?.role === 'ADMIN' && (
+                      <button type="button" onClick={() => deletePayment(entry.id)} className="carpenter-ledger-delete">
+                        <Trash2 size={13} />
+                        Delete
+                      </button>
+                    )}
+                  </article>
+                ))
+              )}
             </div>
           </div>
         </div>

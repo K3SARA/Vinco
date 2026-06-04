@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import InvoiceA4Print from '../components/InvoiceA4Print';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { 
-  FileText, Search, Printer, Eye, Trash2, ShieldAlert,
-  ArrowUpDown, X, Receipt, CheckCircle, Award
+  BookOpen, FileText, Search, Printer, Eye, Trash2, ShieldAlert,
+  ArrowUpDown, X, Receipt, CheckCircle, Award, Play
 } from 'lucide-react';
 
 export default function Invoices() {
@@ -16,6 +18,7 @@ export default function Invoices() {
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -36,6 +39,11 @@ export default function Invoices() {
 
   const translate = (en, si) => (lang === 'en' ? en : si);
 
+  function showAlert(type, text) {
+    setAlertMsg({ type, text });
+    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5050);
+  }
+
   useEffect(() => {
     const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
@@ -45,7 +53,7 @@ export default function Invoices() {
   const loadInvoices = async () => {
     setLoading(true);
     try {
-      const query = `?search=${searchTerm}&startDate=${startDate}&endDate=${endDate}`;
+      const query = `?search=${encodeURIComponent(debouncedSearchTerm)}&startDate=${startDate}&endDate=${endDate}`;
       const res = await api.get(`/invoices${query}`);
       setInvoices(res.data);
     } catch (err) {
@@ -58,12 +66,7 @@ export default function Invoices() {
 
   useEffect(() => {
     loadInvoices();
-  }, [searchTerm, startDate, endDate]);
-
-  const showAlert = (type, text) => {
-    setAlertMsg({ type, text });
-    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5050);
-  };
+  }, [debouncedSearchTerm, startDate, endDate]);
 
   const handleOpenDetails = async (invoice) => {
     try {
@@ -128,6 +131,81 @@ export default function Invoices() {
       window.print();
     }, 300);
   };
+
+  const emptyInvoiceBook =
+    !loading &&
+    invoices.length === 0 &&
+    !searchTerm &&
+    !startDate &&
+    !endDate &&
+    !alertMsg.text &&
+    !invoiceModalOpen &&
+    !paymentModalOpen;
+
+  if (emptyInvoiceBook) {
+    return (
+      <div className="book-screen">
+        <div className="book-banner orange-solid">
+          Let's get started with your first invoice! 🌌
+        </div>
+
+        <div className="book-body">
+          <section className="tutorial-card">
+            <div className="flex items-start gap-5">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#fff1cc] text-[#f6aa23]">
+                <Award size={30} />
+              </div>
+              <div>
+                <h2 className="text-[28px] font-black leading-none text-[#202020]">Tap to Watch & Learn</h2>
+                <p className="mt-3 text-[24px] font-semibold leading-none text-[#657181]">Watch this video & create your first invoice.</p>
+              </div>
+            </div>
+            <div className="video-thumb">
+              <img src="/banner.png" alt="Invoice tutorial" />
+              <div className="play-button">
+                <Play size={38} fill="currentColor" strokeWidth={0} />
+              </div>
+            </div>
+          </section>
+
+          <section className="guide-card">
+            <div className="flex items-center gap-5">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#cbf3df] text-[#19ad67]">
+                <BookOpen size={30} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-[28px] font-black leading-none text-[#202020]">Step-by-step guide with images</h2>
+                <p className="mt-3 text-[24px] font-semibold leading-none text-[#657181]">Follow screenshots to learn easily</p>
+              </div>
+            </div>
+            <Link to="/reports" className="mx-auto mt-6 flex h-[70px] w-[252px] items-center justify-center gap-6 rounded-[18px] border-2 border-[#ade8c9] bg-white text-[27px] font-bold text-[#19ad67] no-underline">
+              Learn Now
+              <span className="text-4xl leading-none">›</span>
+            </Link>
+          </section>
+
+          <div className="empty-copy">
+            <div className="empty-cta-area">
+              Add your first transaction
+              <br />
+              by tapping
+              <span className="empty-arrow">↓</span>
+            </div>
+          </div>
+
+          <div className="space-y-5">
+            <Link to="/billing" className="primary-book-button">
+              Add New Invoice
+            </Link>
+            <div className="safe-text">
+              <CheckCircle size={28} fill="currentColor" strokeWidth={0} />
+              100% safe & secure
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -268,7 +346,7 @@ export default function Invoices() {
       </div>
 
       {/* DUAL MEDIA PRINT CONTAINER */}
-      <div id="print-section" className="hidden">
+      <div id="print-section" className={`hidden ${printFormat === 'thermal' ? 'print-thermal' : 'print-a4'}`}>
         {printDetails && (
           printFormat === 'a4' ? (
             /* A4 INVOICE LAYOUT */

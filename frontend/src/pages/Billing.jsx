@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import InvoiceA4Print from '../components/InvoiceA4Print';
 import { 
   ShoppingCart, Plus, Trash2, Search, User, Truck, Calendar,
-  CreditCard, Percent, FileText, CheckCircle, X, Printer, UserPlus
+  CreditCard, Percent, FileText, CheckCircle, X, Printer, UserPlus, Home
 } from 'lucide-react';
 
 export default function Billing() {
@@ -66,15 +67,10 @@ export default function Billing() {
   });
   const [materialForm, setMaterialForm] = useState({ name: '', image: null, preview: '' });
   const materialImageInputRef = useRef(null);
-
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
-  const translate = (en, si) => (lang === 'en' ? en : si);
-
-  useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
-    window.addEventListener('languageChange', handleLangChange);
-    return () => window.removeEventListener('languageChange', handleLangChange);
-  }, []);
+  const [warrantyEditor, setWarrantyEditor] = useState(null);
+  const [warrantyYears, setWarrantyYears] = useState('');
+  const [priceEditor, setPriceEditor] = useState(null);
+  const [priceValue, setPriceValue] = useState('');
 
   useEffect(() => {
     return () => {
@@ -195,6 +191,59 @@ export default function Billing() {
     ));
   };
 
+  const updateItemPrice = (prodId, val) => {
+    const price = parseFloat(val) || 0;
+    setCartItems(cartItems.map(it =>
+      it.productId === prodId ? { ...it, unitPrice: price } : it
+    ));
+  };
+
+  const updateItemWarranty = (prodId, years) => {
+    const parsedYears = parseFloat(years);
+    const warrantyPeriod = parsedYears > 0
+      ? `${parsedYears} ${parsedYears === 1 ? 'Year' : 'Years'}`
+      : 'No Warranty';
+
+    setCartItems(cartItems.map(it =>
+      it.productId === prodId ? { ...it, warrantyPeriod } : it
+    ));
+  };
+
+  const getWarrantyYears = (warrantyPeriod) => {
+    const text = String(warrantyPeriod || '');
+    if (/month/i.test(text)) {
+      const months = parseFloat(text);
+      return months ? String(Number((months / 12).toFixed(2))) : '';
+    }
+
+    const years = parseFloat(text);
+    return years ? String(years) : '';
+  };
+
+  const openWarrantyEditor = (item) => {
+    setWarrantyEditor(item);
+    setWarrantyYears(getWarrantyYears(item.warrantyPeriod));
+  };
+
+  const saveWarrantyEditor = () => {
+    if (!warrantyEditor) return;
+    updateItemWarranty(warrantyEditor.productId, warrantyYears);
+    setWarrantyEditor(null);
+    setWarrantyYears('');
+  };
+
+  const openPriceEditor = (item) => {
+    setPriceEditor(item);
+    setPriceValue(String(item.unitPrice || ''));
+  };
+
+  const savePriceEditor = () => {
+    if (!priceEditor) return;
+    updateItemPrice(priceEditor.productId, priceValue);
+    setPriceEditor(null);
+    setPriceValue('');
+  };
+
   const updateItemMaterial = (prodId, materialId) => {
     const selected = materials.find((mat) => mat.id === materialId);
     setCartItems(cartItems.map((it) => (
@@ -284,15 +333,15 @@ export default function Billing() {
   // Submit billing
   const handleCheckout = async () => {
     if (!selectedCustomer) {
-      setAlertError('Customer selection is required / පාරිභෝගිකයෙකු තෝරා ගැනීම අනිවාර්ය වේ.');
+      setAlertError('Select a customer first.');
       return;
     }
     if (cartItems.length === 0) {
-      setAlertError('Cart is empty / කරුණාකර භාණ්ඩ එකතු කරන්න.');
+      setAlertError('Add at least one item.');
       return;
     }
     if (balanceAmount > 0 && selectedCustomer.name.toLowerCase() === 'cash customer') {
-      setAlertError('A registered customer is required for credit transactions / ණය ගනුදෙනු සඳහා පාරිභෝගික ගිණුමක් අවශ්‍ය වේ.');
+      setAlertError('Credit bills need a registered customer.');
       return;
     }
 
@@ -391,7 +440,26 @@ export default function Billing() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="billing-native-page space-y-4">
+      <div className="billing-native-header">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            to="/"
+            aria-label="Go to dashboard"
+            className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-stone-950 text-white shadow-md transition-all active:scale-95"
+          >
+            <Home size={20} strokeWidth={2.6} />
+          </Link>
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blue-600">Invoice Header</p>
+            <h2 className="truncate text-2xl font-black text-stone-950">New Bill</h2>
+          </div>
+        </div>
+        <div className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+          POS
+        </div>
+      </div>
+
       {/* SUCCESS POPUP WITH DUAL PRINT */}
       {successInvoice && printDetails && (
         <div className="rounded-xl border border-green-200 bg-white p-8 shadow-xl text-center space-y-6 max-w-xl mx-auto animate-fade-in z-45 relative">
@@ -400,13 +468,13 @@ export default function Billing() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-stone-850">
-              {translate("Billing Generated Successfully!", "බිල්පත සාර්ථකව නිර්මාණය කරන ලදී!")}
+              Bill generated
             </h3>
             <p className="text-xs font-semibold text-stone-400 mt-1">Invoice Number: {successInvoice.invoiceNumber}</p>
           </div>
 
           <div className="p-4 rounded-lg bg-stone-50 border border-stone-200 flex flex-col gap-2.5">
-            <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Choose print layout format / මුද්‍රණ ආකෘතිය තෝරන්න</span>
+            <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Print layout</span>
             <div className="grid grid-cols-2 gap-3 mt-1">
               <button
                 onClick={() => handlePrint('a4')}
@@ -428,14 +496,14 @@ export default function Billing() {
               onClick={handleReset}
               className="rounded-lg border border-stone-200 px-5 py-2.5 text-xs font-bold text-stone-600 hover:bg-stone-100 transition-colors"
             >
-              {translate("New Billing Session", "නව බිල්පතක් ඇරඹීම")}
+              New bill
             </button>
           </div>
         </div>
       )}
 
       {/* DUAL PRINT TEMPLATES CONTAINER (Invisible on screen, only visible in media print) */}
-      <div id="print-section" className="hidden">
+      <div id="print-section" className={`hidden ${printFormat === 'thermal' ? 'print-thermal' : 'print-a4'}`}>
         {printDetails && (
           printFormat === 'a4' ? (
             /* A4 INVOICE LAYOUT */
@@ -454,7 +522,7 @@ export default function Billing() {
                 </div>
                 <div className="text-right leading-relaxed">
                   <p className="font-bold">{printDetails.business?.address}</p>
-                  <p>{translate("Phone: ", "දුරකථන: ")} {printDetails.business?.phone1} {printDetails.business?.phone2 && `| ${printDetails.business?.phone2}`}</p>
+                  <p>Phone: {printDetails.business?.phone1} {printDetails.business?.phone2 && `| ${printDetails.business?.phone2}`}</p>
                   <p>Email: {printDetails.business?.email} | Web: {printDetails.business?.website}</p>
                 </div>
               </div>
@@ -462,16 +530,16 @@ export default function Billing() {
               {/* Invoice details */}
               <div className="grid grid-cols-2 gap-4 py-4 border-b border-stone-150">
                 <div>
-                  <h3 className="font-bold text-stone-400 uppercase tracking-wider mb-1">Customer / පාරිභෝගිකයා</h3>
+                  <h3 className="font-bold text-stone-400 uppercase tracking-wider mb-1">Customer</h3>
                   <p className="font-bold text-sm text-stone-900">{printDetails.invoice?.customer?.name}</p>
                   <p>{printDetails.invoice?.customer?.address}</p>
-                  <p>{translate("Phone: ", "දුරකථන: ")} {printDetails.invoice?.customer?.phone}</p>
+                  <p>Phone: {printDetails.invoice?.customer?.phone}</p>
                 </div>
                 <div className="text-right">
-                  <h3 className="font-bold text-stone-400 uppercase tracking-wider mb-1">Invoice Info / තොරතුරු</h3>
+                  <h3 className="font-bold text-stone-400 uppercase tracking-wider mb-1">Invoice Info</h3>
                   <p className="font-bold text-sm text-wood-700">{printDetails.invoice?.invoiceNumber}</p>
-                  <p>{translate("Date: ", "දිනය: ")} {new Date(printDetails.invoice?.date).toLocaleDateString()}</p>
-                  <p>{translate("Salesperson: ", "අලෙවි නියෝජිත: ")} {printDetails.invoice?.salesperson}</p>
+                  <p>Date: {new Date(printDetails.invoice?.date).toLocaleDateString()}</p>
+                  <p>Salesperson: {printDetails.invoice?.salesperson}</p>
                 </div>
               </div>
 
@@ -506,7 +574,7 @@ export default function Billing() {
                 <div>
                   {printDetails.invoice?.installments?.length > 0 && (
                     <div className="border border-stone-200 rounded-lg p-3">
-                      <h4 className="font-bold text-stone-500 uppercase tracking-wider mb-1.5">Installment Schedule / වාරික ගෙවීම්</h4>
+                      <h4 className="font-bold text-stone-500 uppercase tracking-wider mb-1.5">Installment Schedule</h4>
                       <div className="divide-y divide-stone-100">
                         {printDetails.invoice.installments.map((inst, idx) => (
                           <div key={inst.id} className="py-1.5 flex justify-between text-[11px] font-semibold text-stone-600">
@@ -651,30 +719,32 @@ export default function Billing() {
 
       {/* CORE BILLING INTERFACE FORM (Hidden if success invoice is open) */}
       {!successInvoice && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="billing-native-grid grid grid-cols-1 gap-4 lg:grid-cols-3">
           
           {/* CART ITEMS LIST & CUSTOMER LOOKUP */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="space-y-4 lg:col-span-2">
             
             {/* SELECT CUSTOMER SECTION */}
-            <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm space-y-4">
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-extrabold text-stone-850 text-xs uppercase tracking-wide flex items-center gap-1.5">
                   <User size={16} className="text-wood-650" />
-                  1. Customer Selection / පාරිභෝගිකයා තෝරාගැනීම
+                  Customer
                 </h3>
                 <button
                   onClick={() => setCustomerModalOpen(true)}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-wood-650 hover:underline"
+                  aria-label="Add customer"
+                  title="Add customer"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700 transition-all active:scale-95"
                 >
-                  <UserPlus size={14} /> Quick Register / නව පාරිභෝගිකයෙක්
+                  <UserPlus size={17} />
                 </button>
               </div>
 
               <div className="relative">
                 <input
                   type="text"
-                  placeholder={translate("Search Customer by name or phone... (e.g. Cash Customer)", "නම හෝ දුරකථනය අනුව සොයන්න...")}
+                  placeholder="Search customer"
                   value={custSearch}
                   onChange={(e) => { setCustSearch(e.target.value); setShowCustResults(true); }}
                   onFocus={() => setShowCustResults(true)}
@@ -719,19 +789,20 @@ export default function Billing() {
             </div>
 
             {/* CART AND PRODUCTS SELECTOR */}
-            <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm space-y-4">
-              <h3 className="font-extrabold text-stone-850 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                <ShoppingCart size={16} className="text-wood-650" />
-                2. Furniture items basket / මිලදී ගන්නා භාණ්ඩ
-              </h3>
-
-              <div className="flex justify-end">
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-stone-850 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                  <ShoppingCart size={16} className="text-wood-650" />
+                  Items
+                </h3>
                 <button
                   type="button"
                   onClick={() => setMaterialModalOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-md border border-wood-200 bg-wood-50 px-2.5 py-1.5 text-[10px] font-bold text-wood-650 hover:bg-wood-100"
+                  aria-label="Add material"
+                  title="Add material"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-wood-50 text-wood-650 transition-all active:scale-95"
                 >
-                  <Plus size={13} /> Add Material
+                  <Plus size={17} />
                 </button>
               </div>
 
@@ -742,7 +813,7 @@ export default function Billing() {
                 </div>
                 <input
                   type="text"
-                  placeholder={translate("Search products by SKU or Name to add to cart...", "කේතය හෝ නම අනුව සොයා එකතු කරන්න...")}
+                  placeholder="Search item"
                   value={prodSearch}
                   onChange={(e) => { setProdSearch(e.target.value); setShowProdResults(true); }}
                   onFocus={() => setShowProdResults(true)}
@@ -800,7 +871,13 @@ export default function Billing() {
                           <td className="py-2.5 font-bold text-stone-850">{item.productCode}</td>
                           <td className="py-2.5">
                             <p>{item.productName}</p>
-                            <span className="text-[9px] text-stone-400 font-medium uppercase">Warranty: {item.warrantyPeriod}</span>
+                            <button
+                              type="button"
+                              onClick={() => openWarrantyEditor(item)}
+                              className="mt-1 rounded-full bg-blue-50 px-2 py-1 text-[9px] font-black uppercase text-blue-700 transition-all active:scale-95"
+                            >
+                              Warranty: {item.warrantyPeriod}
+                            </button>
                           </td>
                           <td className="py-2.5 min-w-36">
                             <div className="flex items-center gap-2">
@@ -823,23 +900,41 @@ export default function Billing() {
                               </select>
                             </div>
                           </td>
-                          <td className="py-2.5 text-right">Rs. {item.unitPrice.toLocaleString()}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openPriceEditor(item)}
+                              className="rounded-full bg-stone-100 px-2.5 py-1.5 text-xs font-black text-stone-900 transition-all active:scale-95"
+                            >
+                              Rs. {item.unitPrice.toLocaleString()}
+                            </button>
+                          </td>
                           <td className="py-2.5 text-center">
-                            <input
-                              type="number"
-                              required
-                              value={item.quantity}
-                              onChange={(e) => updateItemQty(item.productId, e.target.value)}
-                              className="w-12 rounded border border-stone-200 p-1 text-center font-bold"
-                            />
+                            <label className="cart-mini-field">
+                              <span>Qty</span>
+                              <input
+                                type="number"
+                                required
+                                value={item.quantity}
+                                aria-label={`${item.productName} quantity`}
+                                placeholder="Qty"
+                                inputMode="decimal"
+                                onChange={(e) => updateItemQty(item.productId, e.target.value)}
+                              />
+                            </label>
                           </td>
                           <td className="py-2.5 text-right text-green-700">
-                            <input
-                              type="number"
-                              value={item.discount}
-                              onChange={(e) => updateItemDiscount(item.productId, e.target.value)}
-                              className="w-16 rounded border border-stone-250 p-1 text-right text-green-700 text-[11px]"
-                            />
+                            <label className="cart-mini-field discount">
+                              <span>Disc</span>
+                              <input
+                                type="number"
+                                value={item.discount}
+                                aria-label={`${item.productName} line discount`}
+                                placeholder="Disc"
+                                inputMode="decimal"
+                                onChange={(e) => updateItemDiscount(item.productId, e.target.value)}
+                              />
+                            </label>
                           </td>
                           <td className="py-2.5 text-right font-black text-stone-900">
                             Rs. {(item.quantity * item.unitPrice - item.discount).toLocaleString()}
@@ -861,10 +956,10 @@ export default function Billing() {
             </div>
 
             {/* DYNAMIC DISPATCH AND INSTALLMENTS PANELS */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               
               {/* DELIVERY CONFIGURATION */}
-              <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm space-y-4">
+              <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm space-y-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -874,7 +969,7 @@ export default function Billing() {
                   />
                   <h3 className="font-extrabold text-stone-850 text-xs uppercase tracking-wide flex items-center gap-1.5">
                     <Truck size={16} />
-                    Schedule Delivery Dispatch
+                    Delivery
                   </h3>
                 </label>
 
@@ -915,7 +1010,7 @@ export default function Billing() {
               </div>
 
               {/* INSTALLMENTS CONFIGURATION */}
-              <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm space-y-4">
+              <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm space-y-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -925,7 +1020,7 @@ export default function Billing() {
                   />
                   <h3 className="font-extrabold text-stone-850 text-xs uppercase tracking-wide flex items-center gap-1.5">
                     <Calendar size={16} />
-                    Enable Installments Plan
+                    Installments
                   </h3>
                 </label>
 
@@ -962,12 +1057,12 @@ export default function Billing() {
           </div>
 
           {/* CHECKOUT CALCULATOR PANEL */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             
-            <div className="bg-white p-5 rounded-xl border border-stone-250 shadow-md space-y-4">
+            <div className="rounded-2xl border border-stone-250 bg-white p-4 shadow-md space-y-3">
               <h3 className="font-extrabold text-stone-850 text-xs uppercase tracking-wide flex items-center gap-1.5 border-b border-stone-100 pb-2.5">
                 <CreditCard size={16} className="text-wood-650" />
-                3. Totals & Receipt / මුළු මුදල සහ බිල්පත
+                Pay
               </h3>
 
               {alertError && (
@@ -982,7 +1077,7 @@ export default function Billing() {
                 {/* Invoice level discount */}
                 <div>
                   <label className="flex justify-between">
-                    <span>Discount (Rs. / රු.)</span>
+                    <span>Discount</span>
                     <Percent size={14} className="text-stone-400" />
                   </label>
                   <input
@@ -1040,7 +1135,7 @@ export default function Billing() {
 
                 {/* Paid Amount */}
                 <div className="pt-2">
-                  <label className="block text-[10px] text-stone-500 font-extrabold uppercase">Amount Paid Now / අද දින ගෙවීම (Rs.)</label>
+                  <label className="block text-[10px] text-stone-500 font-extrabold uppercase">Paid now</label>
                   <input
                     type="number"
                     step="0.01"
@@ -1052,7 +1147,7 @@ export default function Billing() {
 
                 {/* Balance Amount */}
                 <div className="flex justify-between items-center pt-2 text-xs font-extrabold text-red-750 p-1">
-                  <span>Outstanding Receivable / හිඟ මුදල:</span>
+                  <span>Balance</span>
                   <span>Rs. {balanceAmount.toLocaleString()}</span>
                 </div>
 
@@ -1064,9 +1159,9 @@ export default function Billing() {
                     onChange={(e) => setPaymentMethod(e.target.value)}
                     className="mt-1 block w-full rounded-lg border border-stone-200 px-3 py-2 bg-stone-50 text-stone-850 font-bold"
                   >
-                    <option value="Cash">Cash (මුදල්)</option>
-                    <option value="Card">Card (කාඩ්පත්)</option>
-                    <option value="Bank Transfer">Bank Transfer (බැංකු ප්‍රේෂණ)</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Card">Card</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
                   </select>
                 </div>
 
@@ -1083,7 +1178,7 @@ export default function Billing() {
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-stone-500">Notes / සටහන්</label>
+                  <label className="block text-stone-500">Notes</label>
                   <input
                     type="text"
                     value={notes}
@@ -1151,6 +1246,115 @@ export default function Billing() {
 
           </div>
 
+        </div>
+      )}
+
+      {warrantyEditor && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-4 backdrop-blur-sm sm:items-center">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveWarrantyEditor();
+            }}
+            className="w-full max-w-sm rounded-[28px] border border-stone-200 bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blue-600">Warranty</p>
+                <h3 className="mt-1 text-lg font-black text-stone-950">{warrantyEditor.productName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWarrantyEditor(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-all active:scale-95"
+                aria-label="Close warranty editor"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-black uppercase tracking-wide text-stone-500">
+              Years
+              <input
+                value={warrantyYears}
+                onChange={(event) => setWarrantyYears(event.target.value)}
+                inputMode="decimal"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="Years"
+                className="mt-2 block w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-right text-2xl font-black text-stone-950 outline-none focus:border-blue-500"
+              />
+            </label>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  updateItemWarranty(warrantyEditor.productId, 0);
+                  setWarrantyEditor(null);
+                  setWarrantyYears('');
+                }}
+                className="min-h-[52px] rounded-2xl border border-stone-200 bg-white text-sm font-black text-stone-600 transition-all active:scale-95"
+              >
+                No Warranty
+              </button>
+              <button
+                type="submit"
+                className="min-h-[52px] rounded-2xl bg-blue-600 text-sm font-black text-white transition-all active:scale-95"
+              >
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {priceEditor && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-4 backdrop-blur-sm sm:items-center">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              savePriceEditor();
+            }}
+            className="w-full max-w-sm rounded-[28px] border border-stone-200 bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-600">Price</p>
+                <h3 className="mt-1 text-lg font-black text-stone-950">{priceEditor.productName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPriceEditor(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-all active:scale-95"
+                aria-label="Close price editor"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-black uppercase tracking-wide text-stone-500">
+              Unit price
+              <input
+                value={priceValue}
+                onChange={(event) => setPriceValue(event.target.value)}
+                inputMode="decimal"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Price"
+                className="mt-2 block w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-right text-2xl font-black text-stone-950 outline-none focus:border-emerald-500"
+              />
+            </label>
+
+            <button
+              type="submit"
+              className="mt-5 min-h-[52px] w-full rounded-2xl bg-emerald-600 text-sm font-black text-white transition-all active:scale-95"
+            >
+              Save Price
+            </button>
+          </form>
         </div>
       )}
 

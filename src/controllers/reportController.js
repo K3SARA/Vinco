@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
+import { getOrSetCache } from '../utils/cache.js';
 
 // Helper to get start and end of today
 function getTodayRange() {
@@ -39,134 +38,180 @@ function summarizeCarpenterTransactions(payments = []) {
   return summary;
 }
 
+function selectDashboardStatsForRole(stats, role) {
+  if (role === 'ADMIN') {
+    return stats;
+  }
+
+  const fieldsByRole = {
+    CASHIER: [
+      'todaySales',
+      'todayCashReceived',
+      'todayCardBankReceived',
+      'pendingOrdersCount',
+      'pendingDeliveriesCount',
+      'pendingCustomerPayments',
+      'lowStockCount',
+      'monthlyCarpenterPayments',
+      'monthlyCarpenterCredits',
+      'monthlyCarpenterNetExpense',
+      'totalReceivables',
+    ],
+    SALESPERSON: [
+      'pendingOrdersCount',
+      'pendingCustomerPayments',
+      'lowStockCount',
+      'totalReceivables',
+    ],
+    DELIVERY_STAFF: [
+      'pendingDeliveriesCount',
+    ],
+  };
+
+  const selected = {};
+  for (const field of fieldsByRole[role] || []) {
+    selected[field] = stats[field];
+  }
+  return selected;
+}
+
 export async function getDashboardStats(req, res) {
   try {
-    const today = getTodayRange();
-    const month = getMonthRange();
+    const stats = await getOrSetCache('dashboard:stats', async () => {
+      const today = getTodayRange();
+      const month = getMonthRange();
 
-    // 1. Invoices today
-    const invoicesToday = await prisma.invoice.findMany({
-      where: {
-        date: { gte: today.start, lte: today.end },
-        paymentStatus: { not: 'CANCELLED' }
-      }
-    });
-    const todaySales = invoicesToday.reduce((acc, inv) => acc + inv.grandTotal, 0);
+      const [
+        todayInvoiceTotals,
+        paymentMethodGroups,
+        pendingOrdersCount,
+        pendingDeliveriesCount,
+        pendingPaymentTotals,
+        stockTotalsRows,
+        monthlyInvoiceTotals,
+        monthlyCogsRows,
+        monthlyExpenseTotals,
+        carpenterPaymentGroups,
+        customerBalanceTotals,
+        supplierBalanceTotals,
+      ] = await Promise.all([
+        prisma.invoice.aggregate({
+          where: {
+            date: { gte: today.start, lte: today.end },
+            paymentStatus: { not: 'CANCELLED' },
+          },
+          _sum: { grandTotal: true },
+        }),
+        prisma.payment.groupBy({
+          by: ['paymentMethod'],
+          where: { date: { gte: today.start, lte: today.end } },
+          _sum: { amount: true },
+        }),
+        prisma.order.count({
+          where: { orderStatus: { in: ['Pending', 'In Progress', 'Ready'] } },
+        }),
+        prisma.delivery.count({
+          where: { deliveryStatus: { in: ['Pending', 'Scheduled', 'Out For Delivery', 'Rescheduled'] } },
+        }),
+        prisma.invoice.aggregate({
+          where: { paymentStatus: { in: ['CREDIT', 'PARTIAL'] } },
+          _sum: { balanceAmount: true },
+        }),
+        prisma.$queryRaw`
+          SELECT
+            COUNT(*) FILTER (WHERE "stockQty" <= "minStockAlert")::int AS "lowStockCount",
+            COALESCE(SUM("stockQty" * "costPrice"), 0)::float AS "totalStockValue"
+          FROM "Product"
+          WHERE "status" = 'Active'
+        `,
+        prisma.invoice.aggregate({
+          where: {
+            date: { gte: month.start, lte: month.end },
+            paymentStatus: { not: 'CANCELLED' },
+          },
+          _sum: { grandTotal: true },
+        }),
+        prisma.$queryRaw`
+          SELECT COALESCE(SUM(ii."quantity" * p."costPrice"), 0)::float AS "monthlyCOGS"
+          FROM "InvoiceItem" ii
+          INNER JOIN "Invoice" i ON i."id" = ii."invoiceId"
+          INNER JOIN "Product" p ON p."id" = ii."productId"
+          WHERE i."date" >= ${month.start}
+            AND i."date" <= ${month.end}
+            AND i."paymentStatus" <> 'CANCELLED'
+        `,
+        prisma.expense.aggregate({
+          where: { date: { gte: month.start, lte: month.end } },
+          _sum: { amount: true },
+        }),
+        prisma.carpenterPayment.groupBy({
+          by: ['transactionType'],
+          where: { date: { gte: month.start, lte: month.end } },
+          _sum: { amount: true },
+        }),
+        prisma.customer.aggregate({
+          where: { currentBalance: { gt: 0 } },
+          _sum: { currentBalance: true },
+        }),
+        prisma.supplier.aggregate({
+          where: { currentBalance: { gt: 0 } },
+          _sum: { currentBalance: true },
+        }),
+      ]);
 
-    // 2. Payments received today
-    const customerPaymentsToday = await prisma.payment.findMany({
-      where: {
-        date: { gte: today.start, lte: today.end }
-      }
-    });
+      const sum = (value) => Number(value || 0);
+      const todaySales = sum(todayInvoiceTotals._sum.grandTotal);
+      const pendingCustomerPayments = sum(pendingPaymentTotals._sum.balanceAmount);
+      const stockTotals = stockTotalsRows[0] || {};
+      const lowStockCount = sum(stockTotals.lowStockCount);
+      const totalStockValue = sum(stockTotals.totalStockValue);
+      const monthlySales = sum(monthlyInvoiceTotals._sum.grandTotal);
+      const monthlyCOGS = sum(monthlyCogsRows[0]?.monthlyCOGS);
+      const shopExpensesTotal = sum(monthlyExpenseTotals._sum.amount);
+      const totalReceivables = sum(customerBalanceTotals._sum.currentBalance);
+      const totalPayables = sum(supplierBalanceTotals._sum.currentBalance);
 
-    const todayCashReceived = customerPaymentsToday
-      .filter(p => p.paymentMethod.toLowerCase() === 'cash')
-      .reduce((acc, p) => acc + p.amount, 0);
-
-    const todayCardBankReceived = customerPaymentsToday
-      .filter(p => p.paymentMethod.toLowerCase() === 'card' || p.paymentMethod.toLowerCase().includes('bank') || p.paymentMethod.toLowerCase().includes('transfer') || p.paymentMethod.toLowerCase() === 'online')
-      .reduce((acc, p) => acc + p.amount, 0);
-
-    // 3. Pending Orders
-    const pendingOrdersCount = await prisma.order.count({
-      where: {
-        orderStatus: { in: ['Pending', 'In Progress', 'Ready'] }
-      }
-    });
-
-    // 4. Pending Deliveries
-    const pendingDeliveriesCount = await prisma.delivery.count({
-      where: {
-        deliveryStatus: { in: ['Pending', 'Scheduled', 'Out For Delivery', 'Rescheduled'] }
-      }
-    });
-
-    // 5. Pending Customer Payments (Sum of balanceAmount of active invoices)
-    const invoicesPendingPayment = await prisma.invoice.findMany({
-      where: {
-        paymentStatus: { in: ['CREDIT', 'PARTIAL'] }
-      }
-    });
-    const pendingCustomerPayments = invoicesPendingPayment.reduce((acc, inv) => acc + inv.balanceAmount, 0);
-
-    // 6. Low stock items count
-    const products = await prisma.product.findMany({
-      where: { status: 'Active' }
-    });
-    const lowStockCount = products.filter(p => p.stockQty <= p.minStockAlert).length;
-
-    // 7. Total stock value
-    const totalStockValue = products.reduce((acc, p) => acc + (p.stockQty * p.costPrice), 0);
-
-    // 8. Monthly Sales
-    const invoicesMonth = await prisma.invoice.findMany({
-      where: {
-        date: { gte: month.start, lte: month.end },
-        paymentStatus: { not: 'CANCELLED' }
-      },
-      include: {
-        items: {
-          include: { product: true }
+      let todayCashReceived = 0;
+      let todayCardBankReceived = 0;
+      for (const paymentGroup of paymentMethodGroups) {
+        const method = paymentGroup.paymentMethod.toLowerCase();
+        const amount = sum(paymentGroup._sum.amount);
+        if (method === 'cash') {
+          todayCashReceived += amount;
+        } else if (method === 'card' || method.includes('bank') || method.includes('transfer') || method === 'online') {
+          todayCardBankReceived += amount;
         }
       }
-    });
-    const monthlySales = invoicesMonth.reduce((acc, inv) => acc + inv.grandTotal, 0);
 
-    // 9. Monthly Profit/Loss
-    // Cost of goods sold (COGS)
-    let monthlyCOGS = 0;
-    for (const inv of invoicesMonth) {
-      for (const item of inv.items) {
-        // use item.product.costPrice or historical purchase price if available
-        const cost = item.product ? item.product.costPrice : 0;
-        monthlyCOGS += item.quantity * cost;
-      }
-    }
-    const monthlyExpenses = await prisma.expense.findMany({
-      where: {
-        date: { gte: month.start, lte: month.end }
-      }
-    });
-    const monthlyCarpenterTransactions = await prisma.carpenterPayment.findMany({
-      where: {
-        date: { gte: month.start, lte: month.end }
-      }
-    });
-    const shopExpensesTotal = monthlyExpenses.reduce((acc, exp) => acc + exp.amount, 0);
-    const carpenterSummary = summarizeCarpenterTransactions(monthlyCarpenterTransactions);
-    const totalExpenses = shopExpensesTotal + carpenterSummary.netExpense;
-    const monthlyProfitLoss = monthlySales - monthlyCOGS - totalExpenses;
+      const carpenterSummary = summarizeCarpenterTransactions(
+        carpenterPaymentGroups.map((group) => ({
+          transactionType: group.transactionType,
+          amount: sum(group._sum.amount),
+        }))
+      );
+      const totalExpenses = shopExpensesTotal + carpenterSummary.netExpense;
+      const monthlyProfitLoss = monthlySales - monthlyCOGS - totalExpenses;
 
-    // 10. Total Customer Receivable Balance (Sum of positive balances)
-    const customers = await prisma.customer.findMany({
-      where: { currentBalance: { gt: 0 } }
-    });
-    const totalReceivables = customers.reduce((acc, c) => acc + c.currentBalance, 0);
+      return {
+        todaySales,
+        todayCashReceived,
+        todayCardBankReceived,
+        pendingOrdersCount,
+        pendingDeliveriesCount,
+        pendingCustomerPayments,
+        lowStockCount,
+        totalStockValue,
+        monthlySales,
+        monthlyProfitLoss,
+        monthlyCarpenterPayments: carpenterSummary.totalPaid,
+        monthlyCarpenterCredits: carpenterSummary.totalCredit,
+        monthlyCarpenterNetExpense: carpenterSummary.netExpense,
+        totalReceivables,
+        totalPayables
+      };
+    }, 15_000);
 
-    // 11. Total Supplier Payable Balance (Sum of positive balances)
-    const suppliers = await prisma.supplier.findMany({
-      where: { currentBalance: { gt: 0 } }
-    });
-    const totalPayables = suppliers.reduce((acc, s) => acc + s.currentBalance, 0);
-
-    return res.json({
-      todaySales,
-      todayCashReceived,
-      todayCardBankReceived,
-      pendingOrdersCount,
-      pendingDeliveriesCount,
-      pendingCustomerPayments,
-      lowStockCount,
-      totalStockValue,
-      monthlySales,
-      monthlyProfitLoss,
-      monthlyCarpenterPayments: carpenterSummary.totalPaid,
-      monthlyCarpenterCredits: carpenterSummary.totalCredit,
-      monthlyCarpenterNetExpense: carpenterSummary.netExpense,
-      totalReceivables,
-      totalPayables
-    });
+    return res.json(selectDashboardStatsForRole(stats, req.user.role));
   } catch (error) {
     console.error('Get dashboard stats error:', error);
     return res.status(500).json({ error: 'Internal server error.' });

@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { 
-  Users, Plus, Search, Edit, Trash2, Receipt, ArrowUpRight,
-  ArrowDownLeft, X, FileText, Landmark, ShieldCheck, HelpCircle
+  Briefcase, Users, Plus, Search, Edit, Trash2, Receipt,
+  X, FileText, Landmark
 } from 'lucide-react';
 
 export default function Customers() {
@@ -15,6 +17,7 @@ export default function Customers() {
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
   const [statusFilter, setStatusFilter] = useState('');
 
   // Modals state
@@ -69,7 +72,7 @@ export default function Customers() {
   const loadCustomers = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/customers?search=${searchTerm}&status=${statusFilter}`);
+      const res = await api.get(`/customers?search=${encodeURIComponent(debouncedSearchTerm)}&status=${statusFilter}`);
       setCustomers(res.data);
     } catch (error) {
       console.error(error);
@@ -80,13 +83,14 @@ export default function Customers() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCustomers();
-  }, [searchTerm, statusFilter]);
+  }, [debouncedSearchTerm, statusFilter]);
 
-  const showAlert = (type, text) => {
+  function showAlert(type, text) {
     setAlertMsg({ type, text });
     setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
-  };
+  }
 
   const handleOpenAdd = () => {
     setSelectedCustomer(null);
@@ -160,7 +164,7 @@ export default function Customers() {
       setLedgerHistory(res.data);
       setSelectedCustomer(customer);
       setLedgerModalOpen(true);
-    } catch (err) {
+    } catch {
       showAlert('error', 'Failed to retrieve ledger statements.');
     }
   };
@@ -234,10 +238,231 @@ export default function Customers() {
     }
   };
 
+  const money = (value) =>
+    `Rs. ${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const totalToCollect = customers.reduce((sum, c) => sum + Math.max(Number(c.currentBalance || 0), 0), 0);
+  const totalToPay = customers.reduce((sum, c) => sum + Math.max(-Number(c.currentBalance || 0), 0), 0);
+
+  if (loading && customers.length < 0) {
+    return (
+      <div className="book-screen">
+        <div className="book-body credit-empty">
+          <div className="credit-tabs">
+            <button type="button" className="active">👥 Customers</button>
+            <button type="button">🚚 Suppliers</button>
+          </div>
+
+          <div className="summary-grid">
+            <div className="summary-card red">
+              Total to Collect
+              <strong>Rs. 0</strong>
+            </div>
+            <div className="summary-card green">
+              Total to Pay
+              <strong>Rs. 0</strong>
+            </div>
+          </div>
+
+          <div className="credit-search">
+            <Search size={34} />
+            <span>Search by Customer Name / Number</span>
+          </div>
+
+          <div className="empty-copy">
+            <FileText size={96} className="empty-illustration" />
+            <p className="!mt-8 !text-[30px] !font-black">No customer added</p>
+          </div>
+
+          <div className="empty-cta-area">
+            <div>
+              Tap the button below and enter the first
+              <br />
+              transaction.
+              <span className="empty-arrow">↓</span>
+            </div>
+            <button className="primary-book-button" type="button" onClick={handleOpenAdd}>
+              Add Customer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="credit-book-page space-y-4">
+      <section className="credit-book-panel">
+        <div className="credit-book-top credit-section-card">
+          <div>
+            <p className="credit-book-eyebrow">Credit Book</p>
+            <h2 className="credit-book-title">
+              <Users size={22} />
+              Customers
+            </h2>
+          </div>
+
+          <button type="button" onClick={handleOpenAdd} className="credit-primary-action">
+            <Plus size={16} />
+            Add Customer
+          </button>
+        </div>
+
+        <div className="credit-section-card tabs-card">
+          <nav className="credit-book-tabs" aria-label="Credit book pages">
+            <Link to="/customers" className="active">
+              <Users size={18} />
+              Customers
+            </Link>
+            <Link to="/suppliers">
+              <Briefcase size={18} />
+              Suppliers
+            </Link>
+          </nav>
+        </div>
+
+        {alertMsg.text && (
+          <div className={`credit-alert ${alertMsg.type === 'success' ? 'success' : 'error'}`}>
+            {alertMsg.text}
+          </div>
+        )}
+
+        <div className="credit-section-card">
+          <div className="credit-section-heading">
+            <span>Overview</span>
+            <small>{customers.length} customer account{customers.length === 1 ? '' : 's'}</small>
+          </div>
+
+          <div className="credit-summary-grid">
+            <div className="credit-summary-card collect">
+              <span>Total to Collect</span>
+              <strong>{money(totalToCollect)}</strong>
+            </div>
+            <div className="credit-summary-card pay">
+              <span>Total to Pay</span>
+              <strong>{money(totalToPay)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="credit-section-card compact">
+          <div className="credit-section-heading">
+            <span>Find Accounts</span>
+            <small>{statusFilter || 'All statuses'}</small>
+          </div>
+
+          <div className="credit-controls">
+            <label className="credit-search-box">
+              <Search size={16} />
+              <input
+                type="text"
+                placeholder="Search name, phone or address"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </label>
+
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="credit-list-section">
+          <div className="credit-section-heading">
+            <span>Customer Accounts</span>
+            <small>{customers.length ? `${customers.length} shown` : 'No records'}</small>
+          </div>
+
+          <div className="credit-cards-panel">
+          {loading ? (
+            <div className="credit-empty-card">
+              <FileText size={44} />
+              <strong>Loading customers...</strong>
+            </div>
+          ) : customers.length === 0 ? (
+            <div className="credit-empty-card">
+              <FileText size={54} />
+              <strong>No customer added</strong>
+              <span>Tap the button below and enter the first transaction.</span>
+              <button type="button" onClick={handleOpenAdd} className="credit-primary-action wide">
+                <Plus size={16} />
+                Add Customer
+              </button>
+            </div>
+          ) : (
+            <div className="credit-card-grid">
+              {customers.map((c) => {
+                const balance = Number(c.currentBalance || 0);
+                const hasDebt = balance > 0;
+                const isCashCustomer = c.name.toLowerCase() === 'cash customer';
+
+                return (
+                  <article key={c.id} className={`credit-account-card ${hasDebt ? 'debt' : balance < 0 ? 'advance' : ''}`}>
+                    <div className="credit-account-head">
+                      <div>
+                        <h3>{c.name}</h3>
+                        <p>{c.phone || 'No phone number'}</p>
+                      </div>
+                      <span className={`credit-status ${c.status === 'Active' ? 'active' : 'inactive'}`}>
+                        {c.status}
+                      </span>
+                    </div>
+
+                    <div className="credit-detail-grid">
+                      <div>
+                        <span>Address</span>
+                        <strong>{c.address || '-'}</strong>
+                      </div>
+                      <div>
+                        <span>Balance</span>
+                        <strong className={hasDebt ? 'text-red-650' : balance < 0 ? 'text-green-650' : 'text-stone-600'}>
+                          {money(balance)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="credit-action-row">
+                      <button type="button" onClick={() => handleViewLedger(c)}>
+                        <FileText size={13} />
+                        Ledger
+                      </button>
+
+                      {!isCashCustomer && (
+                        <button type="button" onClick={() => handleOpenPayment(c)}>
+                          <Receipt size={13} />
+                          Payment
+                        </button>
+                      )}
+
+                      {!isCashCustomer && (user?.role === 'ADMIN' || user?.role === 'CASHIER') && (
+                        <button type="button" onClick={() => handleOpenAdjust(c)} aria-label={`Adjust ${c.name}`}>
+                          <Landmark size={13} />
+                        </button>
+                      )}
+
+                      <button type="button" onClick={() => handleOpenEdit(c)} aria-label={`Edit ${c.name}`}>
+                        <Edit size={13} />
+                      </button>
+
+                      {user?.role === 'ADMIN' && !isCashCustomer && (
+                        <button type="button" onClick={() => handleDelete(c.id)} aria-label={`Delete ${c.name}`} className="danger">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          </div>
+        </div>
+      </section>
       {/* HEADER SECTION */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
+      <div className="hidden flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
         <div>
           <h2 className="text-xl font-bold text-stone-850 flex items-center gap-2">
             <Users size={22} className="text-wood-600" />
@@ -261,7 +486,7 @@ export default function Customers() {
 
       {/* ALERT */}
       {alertMsg.text && (
-        <div className={`p-4 rounded-lg border text-sm font-semibold ${
+        <div className={`hidden p-4 rounded-lg border text-sm font-semibold ${
           alertMsg.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
         }`}>
           {alertMsg.text}
@@ -269,7 +494,7 @@ export default function Customers() {
       )}
 
       {/* SEARCH AND FILTERS */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+      <div className="hidden grid-cols-1 gap-4 md:grid-cols-3 bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
         {/* Search */}
         <div className="relative md:col-span-2">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-stone-400">
@@ -297,7 +522,7 @@ export default function Customers() {
       </div>
 
       {/* CUSTOMERS TABLE */}
-      <div className="rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+      <div className="hidden rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-xs">
             <thead>
@@ -548,7 +773,40 @@ export default function Customers() {
             </div>
 
             {/* Ledger Transactions */}
-            <div className="mt-4 overflow-y-auto max-h-80 pr-1 border border-stone-150 rounded-lg">
+            <div className="mt-4 ledger-card-list">
+              {ledgerHistory.length === 0 ? (
+                <div className="ledger-empty-card">No transactions logged in this ledger yet.</div>
+              ) : (
+                ledgerHistory.map((item) => (
+                  <article key={item.id} className="ledger-card">
+                    <div className="ledger-card-main">
+                      <div>
+                        <strong>{item.referenceNo || item.transactionType}</strong>
+                        <span>{new Date(item.date).toLocaleString()}</span>
+                      </div>
+                      <span className="ledger-type">{item.transactionType}</span>
+                    </div>
+                    <p>{item.description}</p>
+                    <div className="ledger-amount-grid">
+                      <div className="debit">
+                        <span>Debit</span>
+                        <strong>{item.debit > 0 ? `+ ${money(item.debit)}` : '-'}</strong>
+                      </div>
+                      <div className="credit">
+                        <span>Credit</span>
+                        <strong>{item.credit > 0 ? `- ${money(item.credit)}` : '-'}</strong>
+                      </div>
+                      <div>
+                        <span>Balance After</span>
+                        <strong>{money(item.balanceAfter)}</strong>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+
+            <div className="hidden mt-4 overflow-y-auto max-h-80 pr-1 border border-stone-150 rounded-lg">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-stone-100 text-stone-400 font-bold uppercase border-b border-stone-200">

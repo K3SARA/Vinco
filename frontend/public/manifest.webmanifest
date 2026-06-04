@@ -1,0 +1,26 @@
+{
+  "name": "Alight Furniture Shopbook",
+  "short_name": "Shopbook",
+  "description": "Mobile-first billing, credit, stock, cash, and invoice dashboard for Alight Furniture.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2f6de6",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

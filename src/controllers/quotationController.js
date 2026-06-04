@@ -1,7 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import { calculateCustomerBalanceAfter } from '../utils/ledger.js';
+import { getNextDocumentNumber } from '../utils/documentNumbers.js';
+import { invalidateCache } from '../utils/cache.js';
 
 const prisma = new PrismaClient();
+
+function invalidateQuotationConversionCache() {
+  invalidateCache(['dashboard:', 'customers:', 'products:', 'invoices:']);
+}
 
 export async function getQuotations(req, res) {
   const { search, status } = req.query;
@@ -105,6 +111,10 @@ export async function createQuotation(req, res) {
   const parsedDelCharge = parseFloat(deliveryCharge) || 0.0;
   const parsedInstCharge = parseFloat(installationCharge) || 0.0;
 
+  if (parsedDiscount < 0 || parsedDelCharge < 0 || parsedInstCharge < 0) {
+    return res.status(400).json({ error: 'Discounts and charges cannot be negative.' });
+  }
+
   try {
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) {
@@ -125,13 +135,21 @@ export async function createQuotation(req, res) {
       if (isNaN(price) || price < 0) {
         return res.status(400).json({ error: 'Unit price cannot be negative.' });
       }
+      if (itemDisc < 0) {
+        return res.status(400).json({ error: 'Item discount cannot be negative.' });
+      }
 
       const product = await prisma.product.findUnique({ where: { id: item.productId } });
       if (!product) {
         return res.status(400).json({ error: `Product not found.` });
       }
 
-      const lineTotal = Number((qty * price - itemDisc).toFixed(2));
+      const grossLineTotal = Number((qty * price).toFixed(2));
+      if (itemDisc > grossLineTotal) {
+        return res.status(400).json({ error: `Item discount cannot exceed line total for ${product.name}.` });
+      }
+
+      const lineTotal = Number((grossLineTotal - itemDisc).toFixed(2));
       subtotal += lineTotal;
 
       quotationItemsData.push({
@@ -146,32 +164,42 @@ export async function createQuotation(req, res) {
     }
 
     const totalAmount = Number((subtotal - parsedDiscount + parsedDelCharge + parsedInstCharge).toFixed(2));
+    if (parsedDiscount > subtotal + parsedDelCharge + parsedInstCharge) {
+      return res.status(400).json({ error: 'Quotation discount cannot exceed the quotation total.' });
+    }
 
-    const qCount = await prisma.quotation.count();
     const settings = await prisma.businessSettings.findUnique({ where: { id: 'default' } });
     const prefix = settings ? settings.quotationPrefix : 'QTN-';
-    const quotationNumber = `${prefix}${new Date().getFullYear()}-${String(qCount + 1).padStart(4, '0')}`;
 
-    const quotation = await prisma.quotation.create({
-      data: {
-        quotationNumber,
-        date: date ? new Date(date) : new Date(),
-        customerId,
-        subtotal,
-        discount: parsedDiscount,
-        deliveryCharge: parsedDelCharge,
-        installationCharge: parsedInstCharge,
-        totalAmount,
-        validUntil: new Date(validUntil),
-        notes,
-        status: status || 'Sent',
-        items: {
-          create: quotationItemsData,
+    const quotation = await prisma.$transaction(async (tx) => {
+      const quotationNumber = await getNextDocumentNumber(tx, {
+        counterName: 'quotation',
+        prefix,
+        modelName: 'quotation',
+        fieldName: 'quotationNumber',
+      });
+
+      return tx.quotation.create({
+        data: {
+          quotationNumber,
+          date: date ? new Date(date) : new Date(),
+          customerId,
+          subtotal,
+          discount: parsedDiscount,
+          deliveryCharge: parsedDelCharge,
+          installationCharge: parsedInstCharge,
+          totalAmount,
+          validUntil: new Date(validUntil),
+          notes,
+          status: status || 'Sent',
+          items: {
+            create: quotationItemsData,
+          },
         },
-      },
-      include: {
-        items: true,
-      },
+        include: {
+          items: true,
+        },
+      });
     });
 
     return res.status(201).json(quotation);
@@ -203,6 +231,10 @@ export async function updateQuotation(req, res) {
   const parsedDelCharge = parseFloat(deliveryCharge) || 0.0;
   const parsedInstCharge = parseFloat(installationCharge) || 0.0;
 
+  if (parsedDiscount < 0 || parsedDelCharge < 0 || parsedInstCharge < 0) {
+    return res.status(400).json({ error: 'Discounts and charges cannot be negative.' });
+  }
+
   try {
     const existing = await prisma.quotation.findUnique({ where: { id } });
     if (!existing) {
@@ -216,22 +248,46 @@ export async function updateQuotation(req, res) {
     const itemsData = [];
 
     for (const item of items) {
+      const qty = parseFloat(item.quantity);
+      const price = parseFloat(item.unitPrice);
+      const itemDisc = parseFloat(item.discount) || 0.0;
+
+      if (isNaN(qty) || qty <= 0) {
+        return res.status(400).json({ error: 'Quantity must be greater than zero.' });
+      }
+      if (isNaN(price) || price < 0) {
+        return res.status(400).json({ error: 'Unit price cannot be negative.' });
+      }
+      if (itemDisc < 0) {
+        return res.status(400).json({ error: 'Item discount cannot be negative.' });
+      }
       const product = await prisma.product.findUnique({ where: { id: item.productId } });
-      const lineTotal = Number((item.quantity * item.unitPrice - (item.discount || 0)).toFixed(2));
+      if (!product) {
+        return res.status(400).json({ error: 'Product not found.' });
+      }
+      const grossLineTotal = Number((qty * price).toFixed(2));
+      if (itemDisc > grossLineTotal) {
+        return res.status(400).json({ error: `Item discount cannot exceed line total for ${product.name}.` });
+      }
+
+      const lineTotal = Number((grossLineTotal - itemDisc).toFixed(2));
       subtotal += lineTotal;
 
       itemsData.push({
         productId: item.productId,
         productCode: product.code,
         productName: product.name,
-        quantity: parseFloat(item.quantity),
-        unitPrice: parseFloat(item.unitPrice),
-        discount: parseFloat(item.discount) || 0.0,
+        quantity: qty,
+        unitPrice: price,
+        discount: itemDisc,
         lineTotal,
       });
     }
 
     const totalAmount = Number((subtotal - parsedDiscount + parsedDelCharge + parsedInstCharge).toFixed(2));
+    if (parsedDiscount > subtotal + parsedDelCharge + parsedInstCharge) {
+      return res.status(400).json({ error: 'Quotation discount cannot exceed the quotation total.' });
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       // Delete old items
@@ -292,6 +348,9 @@ export async function convertToInvoice(req, res) {
   }
 
   const parsedPaidAmount = parseFloat(paidAmount) || 0.0;
+  if (parsedPaidAmount < 0) {
+    return res.status(400).json({ error: 'Paid amount cannot be negative.' });
+  }
 
   try {
     const quotation = await prisma.quotation.findUnique({
@@ -308,19 +367,32 @@ export async function convertToInvoice(req, res) {
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Mark quotation as Converted
-      await tx.quotation.update({
-        where: { id },
+      const converted = await tx.quotation.updateMany({
+        where: {
+          id,
+          status: { not: 'Converted' },
+        },
         data: { status: 'Converted' },
       });
+      if (converted.count !== 1) {
+        throw new Error('This quotation has already been converted.');
+      }
 
       // 2. Generate Invoice number
-      const invoiceCount = await tx.invoice.count();
       const settings = await tx.businessSettings.findUnique({ where: { id: 'default' } });
       const prefix = settings ? settings.invoicePrefix : 'INV-';
-      const invoiceNumber = `${prefix}${new Date().getFullYear()}-${String(invoiceCount + 1).padStart(4, '0')}`;
+      const invoiceNumber = await getNextDocumentNumber(tx, {
+        counterName: 'invoice',
+        prefix,
+        modelName: 'invoice',
+        fieldName: 'invoiceNumber',
+      });
 
       const grandTotal = quotation.totalAmount;
       const balanceAmount = Number((grandTotal - parsedPaidAmount).toFixed(2));
+      if (parsedPaidAmount > grandTotal) {
+        throw new Error(`Paid amount cannot exceed invoice total. Invoice total: ${grandTotal}`);
+      }
 
       let paymentStatus = 'CREDIT';
       if (parsedPaidAmount === grandTotal) {
@@ -371,11 +443,29 @@ export async function convertToInvoice(req, res) {
           throw new Error(`Insufficient stock for ${prod.name} (Available: ${prod.stockQty})`);
         }
 
-        const newStock = prod.stockQty - item.quantity;
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stockQty: newStock },
-        });
+        let updatedProduct;
+        if (req.user.role === 'ADMIN') {
+          updatedProduct = await tx.product.update({
+            where: { id: item.productId },
+            data: { stockQty: { decrement: item.quantity } },
+            select: { stockQty: true },
+          });
+        } else {
+          const updateResult = await tx.product.updateMany({
+            where: {
+              id: item.productId,
+              stockQty: { gte: item.quantity },
+            },
+            data: { stockQty: { decrement: item.quantity } },
+          });
+          if (updateResult.count !== 1) {
+            throw new Error(`Insufficient stock for ${prod.name} (Available: ${prod.stockQty})`);
+          }
+          updatedProduct = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { stockQty: true },
+          });
+        }
 
         await tx.stockMovement.create({
           data: {
@@ -385,7 +475,7 @@ export async function convertToInvoice(req, res) {
             referenceId: invoice.id,
             quantityIn: 0,
             quantityOut: item.quantity,
-            balanceAfter: newStock,
+            balanceAfter: updatedProduct.stockQty,
             description: `Sold in Invoice ${invoiceNumber} (Converted from QTN ${quotation.quotationNumber})`,
           },
         });
@@ -425,8 +515,12 @@ export async function convertToInvoice(req, res) {
         });
 
         // Payment record
-        const pCount = await tx.payment.count();
-        const pNo = `PAY-${new Date().getFullYear()}-${String(pCount + 1).padStart(4, '0')}`;
+        const pNo = await getNextDocumentNumber(tx, {
+          counterName: 'payment',
+          prefix: 'PAY-',
+          modelName: 'payment',
+          fieldName: 'paymentNumber',
+        });
         await tx.payment.create({
           data: {
             paymentNumber: pNo,
@@ -450,8 +544,12 @@ export async function convertToInvoice(req, res) {
 
       // 6. Schedule delivery if charge > 0
       if (quotation.deliveryCharge > 0) {
-        const deliveryCount = await tx.delivery.count();
-        const deliveryNumber = `DEL-${new Date().getFullYear()}-${String(deliveryCount + 1).padStart(4, '0')}`;
+        const deliveryNumber = await getNextDocumentNumber(tx, {
+          counterName: 'delivery',
+          prefix: 'DEL-',
+          modelName: 'delivery',
+          fieldName: 'deliveryNumber',
+        });
         await tx.delivery.create({
           data: {
             deliveryNumber,
@@ -470,6 +568,7 @@ export async function convertToInvoice(req, res) {
       return invoice;
     });
 
+    invalidateQuotationConversionCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Convert quotation to invoice error:', error);
@@ -486,6 +585,9 @@ export async function convertToOrder(req, res) {
   }
 
   const parsedAdvance = parseFloat(advancePayment) || 0.0;
+  if (parsedAdvance < 0) {
+    return res.status(400).json({ error: 'Advance payment cannot be negative.' });
+  }
 
   try {
     const quotation = await prisma.quotation.findUnique({
@@ -502,19 +604,32 @@ export async function convertToOrder(req, res) {
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Mark converted
-      await tx.quotation.update({
-        where: { id },
+      const converted = await tx.quotation.updateMany({
+        where: {
+          id,
+          status: { not: 'Converted' },
+        },
         data: { status: 'Converted' },
       });
+      if (converted.count !== 1) {
+        throw new Error('This quotation has already been converted.');
+      }
 
       // 2. Generate Order number
-      const orderCount = await tx.order.count();
       const settings = await tx.businessSettings.findUnique({ where: { id: 'default' } });
       const prefix = settings ? settings.orderPrefix : 'ORD-';
-      const orderNumber = `${prefix}${new Date().getFullYear()}-${String(orderCount + 1).padStart(4, '0')}`;
+      const orderNumber = await getNextDocumentNumber(tx, {
+        counterName: 'order',
+        prefix,
+        modelName: 'order',
+        fieldName: 'orderNumber',
+      });
 
       const totalAmount = quotation.totalAmount;
       const balanceAmount = Number((totalAmount - parsedAdvance).toFixed(2));
+      if (parsedAdvance > totalAmount) {
+        throw new Error(`Advance payment cannot exceed order total. Order total: ${totalAmount}`);
+      }
 
       // 3. Create Order
       const order = await tx.order.create({
@@ -581,8 +696,12 @@ export async function convertToOrder(req, res) {
         });
 
         // Payment record
-        const pCount = await tx.payment.count();
-        const pNo = `PAY-${new Date().getFullYear()}-${String(pCount + 1).padStart(4, '0')}`;
+        const pNo = await getNextDocumentNumber(tx, {
+          counterName: 'payment',
+          prefix: 'PAY-',
+          modelName: 'payment',
+          fieldName: 'paymentNumber',
+        });
         await tx.payment.create({
           data: {
             paymentNumber: pNo,
@@ -607,6 +726,7 @@ export async function convertToOrder(req, res) {
       return order;
     });
 
+    invalidateQuotationConversionCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Convert quotation to order error:', error);

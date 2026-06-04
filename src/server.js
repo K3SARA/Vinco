@@ -64,6 +64,7 @@ const upload = multer({
 // ==========================================
 
 // Auth
+app.get('/api/auth/setup-status', auth.setupStatus);
 app.post('/api/auth/login', auth.login);
 app.post('/api/auth/setup-admin', auth.setupAdmin);
 app.get('/api/auth/me', authenticateToken, auth.me);
@@ -72,13 +73,13 @@ app.get('/api/auth/me', authenticateToken, auth.me);
 app.get('/api/dashboard', authenticateToken, reports.getDashboardStats);
 
 // Business & Receipt Settings
-app.get('/api/settings/business', settings.getBusinessSettings);
+app.get('/api/settings/business', authenticateToken, authorizeRoles('ADMIN'), settings.getBusinessSettings);
 app.put('/api/settings/business', authenticateToken, authorizeRoles('ADMIN'), settings.updateBusinessSettings);
-app.get('/api/settings/receipt', settings.getReceiptSettings);
+app.get('/api/settings/receipt', authenticateToken, authorizeRoles('ADMIN'), settings.getReceiptSettings);
 app.put('/api/settings/receipt', authenticateToken, authorizeRoles('ADMIN'), settings.updateReceiptSettings);
 
-// Categories (ADMIN, CASHIER, SALESPERSON can manage)
-app.get('/api/categories', getCategoriesWithTokenCheck);
+// Categories
+app.get('/api/categories', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), products.getCategories);
 app.post('/api/categories', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), products.createCategory);
 app.put('/api/categories/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), products.updateCategory);
 app.delete('/api/categories/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), products.deleteCategory);
@@ -88,7 +89,7 @@ app.get('/api/materials', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 
 app.post('/api/materials', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), upload.single('materialImage'), materials.createMaterial);
 
 // Products
-app.get('/api/products', getProductsWithTokenCheck);
+app.get('/api/products', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), products.getProducts);
 app.post('/api/products', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), products.createProduct);
 app.get('/api/products/:id', authenticateToken, products.getProductById);
 app.put('/api/products/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), products.updateProduct);
@@ -111,7 +112,7 @@ app.get('/api/invoices/:id', authenticateToken, invoices.getInvoiceById);
 app.delete('/api/invoices/:id', authenticateToken, authorizeRoles('ADMIN'), invoices.deleteInvoice);
 app.post('/api/invoices/:id/cancel', authenticateToken, authorizeRoles('ADMIN'), invoices.cancelInvoice);
 app.post('/api/invoices/:id/payment', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), invoices.addInvoicePayment);
-app.get('/api/invoices/:id/print', invoices.getInvoicePrintDetails); // Open endpoint for local client browser print window
+app.get('/api/invoices/:id/print', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), invoices.getInvoicePrintDetails);
 
 // Quotations
 app.get('/api/quotations', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), quotations.getQuotations);
@@ -126,15 +127,14 @@ app.post('/api/quotations/:id/convert-to-order', authenticateToken, authorizeRol
 app.get('/api/orders', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), orders.getOrders);
 app.post('/api/orders', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), orders.createOrder);
 app.get('/api/orders/:id', authenticateToken, orders.getOrderById);
-app.put('/api/orders/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'SALESPERSON'), orders.cancelOrder); // Can cancel or edit
 app.post('/api/orders/:id/convert-to-invoice', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), orders.convertToInvoice);
 app.post('/api/orders/:id/payment', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), orders.addOrderPayment);
 app.post('/api/orders/:id/cancel', authenticateToken, authorizeRoles('ADMIN'), orders.cancelOrder);
 
 // Payments (Cash/Bank receivables logs)
-app.get('/api/payments', authenticateToken, payments.getPayments);
-app.get('/api/payments/pending', authenticateToken, payments.getPendingPayments);
-app.get('/api/payments/overdue', authenticateToken, payments.getOverduePayments);
+app.get('/api/payments', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), payments.getPayments);
+app.get('/api/payments/pending', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), payments.getPendingPayments);
+app.get('/api/payments/overdue', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), payments.getOverduePayments);
 
 // Deliveries
 app.get('/api/deliveries', authenticateToken, deliveries.getDeliveries);
@@ -144,25 +144,25 @@ app.put('/api/deliveries/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHI
 app.post('/api/deliveries/:id/status', authenticateToken, authorizeRoles('ADMIN', 'CASHIER', 'DELIVERY_STAFF'), deliveries.updateDeliveryStatus);
 
 // Suppliers
-app.get('/api/suppliers', authenticateToken, suppliers.getSuppliers);
+app.get('/api/suppliers', authenticateToken, authorizeRoles('ADMIN'), suppliers.getSuppliers);
 app.post('/api/suppliers', authenticateToken, authorizeRoles('ADMIN'), suppliers.createSupplier);
-app.get('/api/suppliers/:id', authenticateToken, suppliers.getSupplierById);
+app.get('/api/suppliers/:id', authenticateToken, authorizeRoles('ADMIN'), suppliers.getSupplierById);
 app.put('/api/suppliers/:id', authenticateToken, authorizeRoles('ADMIN'), suppliers.updateSupplier);
 app.delete('/api/suppliers/:id', authenticateToken, authorizeRoles('ADMIN'), suppliers.deleteSupplier);
-app.get('/api/suppliers/:id/ledger', authenticateToken, suppliers.getSupplierLedger);
+app.get('/api/suppliers/:id/ledger', authenticateToken, authorizeRoles('ADMIN'), suppliers.getSupplierLedger);
 app.post('/api/suppliers/:id/payment', authenticateToken, authorizeRoles('ADMIN'), suppliers.addPaymentMade);
 app.post('/api/suppliers/:id/adjustment', authenticateToken, authorizeRoles('ADMIN'), suppliers.addAdjustment);
 
 // Purchases
-app.get('/api/purchases', authenticateToken, purchases.getPurchases);
+app.get('/api/purchases', authenticateToken, authorizeRoles('ADMIN'), purchases.getPurchases);
 app.post('/api/purchases', authenticateToken, authorizeRoles('ADMIN'), purchases.createPurchase);
-app.get('/api/purchases/:id', authenticateToken, purchases.getPurchaseById);
+app.get('/api/purchases/:id', authenticateToken, authorizeRoles('ADMIN'), purchases.getPurchaseById);
 app.put('/api/purchases/:id', authenticateToken, authorizeRoles('ADMIN'), purchases.addPurchasePayment); // payment additions
 app.delete('/api/purchases/:id', authenticateToken, authorizeRoles('ADMIN'), purchases.deletePurchase);
 app.post('/api/purchases/:id/payment', authenticateToken, authorizeRoles('ADMIN'), purchases.addPurchasePayment);
 
 // Expenses
-app.get('/api/expenses', authenticateToken, expenses.getExpenses);
+app.get('/api/expenses', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), expenses.getExpenses);
 app.post('/api/expenses', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), expenses.createExpense);
 app.put('/api/expenses/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), expenses.updateExpense);
 app.delete('/api/expenses/:id', authenticateToken, authorizeRoles('ADMIN'), expenses.deleteExpense);
@@ -172,40 +172,32 @@ app.get('/api/carpenters', authenticateToken, authorizeRoles('ADMIN', 'CASHIER')
 app.post('/api/carpenters', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.createCarpenter);
 app.put('/api/carpenters/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.updateCarpenter);
 app.delete('/api/carpenters/:id', authenticateToken, authorizeRoles('ADMIN'), carpenters.deleteCarpenter);
+app.get('/api/carpenters/:id/ledger', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.getCarpenterLedger);
 app.get('/api/carpenters/:id/payments', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.getCarpenterPayments);
 app.post('/api/carpenters/:id/payments', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), carpenters.addCarpenterPayment);
 app.delete('/api/carpenter-payments/:id', authenticateToken, authorizeRoles('ADMIN'), carpenters.deleteCarpenterPayment);
 
 // Reports
-app.get('/api/reports/daily-sales', authenticateToken, reports.getDailySalesReport);
-app.get('/api/reports/monthly-sales', authenticateToken, reports.getMonthlySalesReport);
-app.get('/api/reports/stock', authenticateToken, reports.getStockReport);
-app.get('/api/reports/customer-balances', authenticateToken, reports.getCustomerBalancesReport);
-app.get('/api/reports/supplier-balances', authenticateToken, reports.getSupplierBalancesReport);
-app.get('/api/reports/deliveries', authenticateToken, reports.getDeliveryReport);
-app.get('/api/reports/profit-loss', authenticateToken, reports.getProfitLossReport);
-app.get('/api/reports/best-selling', authenticateToken, reports.getBestSellingReport);
-app.get('/api/reports/pending-payments', authenticateToken, reports.getPendingPaymentsReport);
+app.get('/api/reports/daily-sales', authenticateToken, authorizeRoles('ADMIN'), reports.getDailySalesReport);
+app.get('/api/reports/monthly-sales', authenticateToken, authorizeRoles('ADMIN'), reports.getMonthlySalesReport);
+app.get('/api/reports/stock', authenticateToken, authorizeRoles('ADMIN'), reports.getStockReport);
+app.get('/api/reports/customer-balances', authenticateToken, authorizeRoles('ADMIN'), reports.getCustomerBalancesReport);
+app.get('/api/reports/supplier-balances', authenticateToken, authorizeRoles('ADMIN'), reports.getSupplierBalancesReport);
+app.get('/api/reports/deliveries', authenticateToken, authorizeRoles('ADMIN'), reports.getDeliveryReport);
+app.get('/api/reports/profit-loss', authenticateToken, authorizeRoles('ADMIN'), reports.getProfitLossReport);
+app.get('/api/reports/best-selling', authenticateToken, authorizeRoles('ADMIN'), reports.getBestSellingReport);
+app.get('/api/reports/pending-payments', authenticateToken, authorizeRoles('ADMIN'), reports.getPendingPaymentsReport);
 
 // User account management (ADMIN ONLY)
-app.get('/api/users', authenticateToken, settings.getUsers);
-app.post('/api/users', authenticateToken, settings.createUser);
-app.put('/api/users/:id', authenticateToken, settings.updateUser);
-app.delete('/api/users/:id', authenticateToken, settings.deleteUser);
+app.get('/api/users', authenticateToken, authorizeRoles('ADMIN'), settings.getUsers);
+app.post('/api/users', authenticateToken, authorizeRoles('ADMIN'), settings.createUser);
+app.put('/api/users/:id', authenticateToken, authorizeRoles('ADMIN'), settings.updateUser);
+app.delete('/api/users/:id', authenticateToken, authorizeRoles('ADMIN'), settings.deleteUser);
 
 // Local placeholder helper for invoice edits
 app.put('/api/invoices/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   return res.status(501).json({ error: 'Direct edits of finalized invoices are restricted to maintain ledger compliance. Cancel and recreate invoice instead.' });
 });
-
-// Helper open endpoints that bypass auth ONLY if query demands it or just wrappers
-function getCategoriesWithTokenCheck(req, res, next) {
-  // Let local client fetch categories for print windows without token
-  return products.getCategories(req, res, next);
-}
-function getProductsWithTokenCheck(req, res, next) {
-  return products.getProducts(req, res, next);
-}
 
 // ==========================================
 // FRONTEND SERVING

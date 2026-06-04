@@ -1,9 +1,23 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { getJwtSecret } from '../utils/authConfig.js';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'alight_furniture_billing_secret_key_123';
+const JWT_SECRET = getJwtSecret();
+
+export async function setupStatus(req, res) {
+  try {
+    const userCount = await prisma.user.count();
+    return res.json({
+      needsSetup: userCount === 0,
+      configured: userCount > 0,
+    });
+  } catch (error) {
+    console.error('Setup status error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+}
 
 export async function login(req, res) {
   const { username, password } = req.body;
@@ -13,6 +27,14 @@ export async function login(req, res) {
   }
 
   try {
+    const userCount = await prisma.user.count();
+    if (userCount === 0) {
+      return res.status(409).json({
+        error: 'Initial system setup is required before login.',
+        needsSetup: true,
+      });
+    }
+
     const user = await prisma.user.findUnique({
       where: { username },
     });

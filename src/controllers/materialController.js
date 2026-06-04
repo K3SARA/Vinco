@@ -1,14 +1,19 @@
-import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
+import prisma from '../utils/prisma.js';
+import { getOrSetCache, invalidateCache } from '../utils/cache.js';
 
-const prisma = new PrismaClient();
+const materialCachePrefix = 'materials:';
 
 export async function getMaterials(_req, res) {
   try {
-    const materials = await prisma.material.findMany({
-      where: { active: true },
-      orderBy: { name: 'asc' },
-    });
+    const materials = await getOrSetCache(
+      'materials:active',
+      () => prisma.material.findMany({
+        where: { active: true },
+        orderBy: { name: 'asc' },
+      }),
+      120_000
+    );
     return res.json(materials);
   } catch (error) {
     console.error('Get materials error:', error);
@@ -30,6 +35,7 @@ export async function createMaterial(req, res) {
         image: req.file ? `/uploads/${req.file.filename}` : null,
       },
     });
+    invalidateCache(materialCachePrefix);
     return res.status(201).json(material);
   } catch (error) {
     if (req.file?.path) fs.unlink(req.file.path, () => {});

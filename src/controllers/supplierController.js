@@ -1,30 +1,44 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma.js';
 import { calculateSupplierBalanceAfter } from '../utils/ledger.js';
+import { getNextDocumentNumber } from '../utils/documentNumbers.js';
+import { getOrSetCache, invalidateCache } from '../utils/cache.js';
 
-const prisma = new PrismaClient();
+const supplierCachePrefix = ['dashboard:', 'suppliers:'];
+
+function invalidateSupplierCache() {
+  invalidateCache(supplierCachePrefix);
+}
 
 export async function getSuppliers(req, res) {
   const { search, status } = req.query;
 
   try {
-    const where = {};
-    if (status) {
-      where.status = status;
-    }
+    const suppliers = await getOrSetCache(
+      `suppliers:${JSON.stringify({ search: search || '', status: status || '' })}`,
+      async () => {
+        const where = {};
+        if (status) {
+          where.status = status;
+        }
 
-    let suppliers = await prisma.supplier.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+        let rows = await prisma.supplier.findMany({
+          where,
+          orderBy: { name: 'asc' },
+        });
 
-    if (search) {
-      const q = search.toLowerCase();
-      suppliers = suppliers.filter(s => 
-        s.name.toLowerCase().includes(q) ||
-        s.phone.includes(q) ||
-        (s.address && s.address.toLowerCase().includes(q))
-      );
-    }
+        if (search) {
+          const q = search.toLowerCase();
+          rows = rows.filter(s =>
+            s.name.toLowerCase().includes(q) ||
+            s.phone.includes(q) ||
+            (s.address && s.address.toLowerCase().includes(q))
+          );
+        }
+
+        return rows;
+      },
+      45_000
+    );
 
     return res.json(suppliers);
   } catch (error) {
@@ -115,6 +129,7 @@ export async function createSupplier(req, res) {
       return supplier;
     });
 
+    invalidateSupplierCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Create supplier error:', error);
@@ -145,6 +160,7 @@ export async function updateSupplier(req, res) {
         status: status || 'Active',
       },
     });
+    invalidateSupplierCache();
     return res.json(supplier);
   } catch (error) {
     console.error('Update supplier error:', error);
@@ -168,6 +184,7 @@ export async function deleteSupplier(req, res) {
     }
 
     await prisma.supplier.delete({ where: { id } });
+    invalidateSupplierCache();
     return res.json({ message: 'Supplier deleted successfully.' });
   } catch (error) {
     console.error('Delete supplier error:', error);
@@ -209,8 +226,12 @@ export async function addPaymentMade(req, res) {
       }
 
       // Generate payment number
-      const paymentCount = await tx.supplierPayment.count();
-      const paymentNumber = `SPAY-${new Date().getFullYear()}-${String(paymentCount + 1).padStart(4, '0')}`;
+      const paymentNumber = await getNextDocumentNumber(tx, {
+        counterName: 'supplier-payment',
+        prefix: 'SPAY-',
+        modelName: 'supplierPayment',
+        fieldName: 'paymentNumber',
+      });
 
       // Create Payment
       const payment = await tx.supplierPayment.create({
@@ -250,6 +271,7 @@ export async function addPaymentMade(req, res) {
       return payment;
     });
 
+    invalidateSupplierCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Supplier payment error:', error);
@@ -306,6 +328,7 @@ export async function addAdjustment(req, res) {
       return { balanceAfter, referenceNo: refNo };
     });
 
+    invalidateSupplierCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Supplier adjustment error:', error);

@@ -1,10 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { 
-  Award, Plus, Search, Edit, Trash2, X, ShoppingCart, 
-  Eye, Receipt, CheckCircle, ShieldAlert
+  Award, Plus, Search, X, ShoppingCart, 
+  Eye, Receipt, ShieldAlert
 } from 'lucide-react';
+
+const asNumber = (value) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+const formatCurrency = (value) => asNumber(value).toLocaleString();
+
+const formatDate = (value, includeTime = false) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return includeTime ? date.toLocaleString() : date.toLocaleDateString();
+};
+
+const defaultExpectedDeliveryDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 14);
+  return date.toISOString().split('T')[0];
+};
+
+const getOrderStatus = (order) => order?.orderStatus || order?.status || 'Pending';
+const getOrderTotal = (order) => asNumber(order?.totalAmount ?? order?.grandTotal);
+const getOrderAdvance = (order) => asNumber(order?.advancePayment ?? order?.paidAmount);
+const getOrderBalance = (order) => {
+  if (order?.balanceAmount !== undefined && order?.balanceAmount !== null) {
+    return asNumber(order.balanceAmount);
+  }
+  return getOrderTotal(order) - getOrderAdvance(order);
+};
+const getOrderDate = (order) => order?.orderDate || order?.date;
+const getOrderExpectedDate = (order) => order?.expectedDeliveryDate || order?.expectedDate;
+const isStockReserved = (order) => {
+  if (typeof order?.reserveStock === 'boolean') return order.reserveStock;
+  return String(order?.notes || '').includes('[Stock Reserved]');
+};
 
 export default function Orders() {
   const { user } = useAuth();
@@ -17,6 +54,7 @@ export default function Orders() {
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
 
   // Modals state
   const [orderModalOpen, setOrderModalOpen] = useState(false);
@@ -33,8 +71,9 @@ export default function Orders() {
   // Form state
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState(defaultExpectedDeliveryDate());
   const [discount, setDiscount] = useState(0);
-  const [paidAmount, setPaidAmount] = useState(0);
+  const [advancePayment, setAdvancePayment] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [notes, setNotes] = useState('');
   const [reserveStock, setReserveStock] = useState(true);
@@ -49,17 +88,30 @@ export default function Orders() {
 
   const translate = (en, si) => (lang === 'en' ? en : si);
 
+  function showAlert(type, text) {
+    setAlertMsg({ type, text });
+    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  }
+
   useEffect(() => {
     const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);
 
-  const loadData = async () => {
+  const loadOrders = async () => {
     setLoading(true);
     try {
-      const oRes = await api.get(`/orders?search=${searchTerm}`);
+      const oRes = await api.get(`/orders?search=${encodeURIComponent(debouncedSearchTerm)}`);
       setOrders(oRes.data);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Failed to retrieve order records.');
+    }
+  };
+
+  const loadLookups = async () => {
+    try {
       const prodRes = await api.get('/products?status=Active');
       setProducts(prodRes.data);
       const custRes = await api.get('/customers?status=Active');
@@ -72,22 +124,41 @@ export default function Orders() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [searchTerm]);
-
-  const showAlert = (type, text) => {
-    setAlertMsg({ type, text });
-    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [oRes, prodRes, custRes] = await Promise.all([
+        api.get(`/orders?search=${encodeURIComponent(debouncedSearchTerm)}`),
+        api.get('/products?status=Active'),
+        api.get('/customers?status=Active'),
+      ]);
+      setOrders(oRes.data);
+      setProducts(prodRes.data);
+      setCustomers(custRes.data);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Failed to retrieve order records.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadLookups();
+  }, []);
+
+  useEffect(() => {
+    loadOrders();
+  }, [debouncedSearchTerm]);
 
   const handleOpenAdd = () => {
     setSelectedCustomer(null);
     setCustSearch('');
     setProdSearch('');
     setOrderItems([]);
+    setExpectedDeliveryDate(defaultExpectedDeliveryDate());
     setDiscount(0);
-    setPaidAmount(0);
+    setAdvancePayment(0);
     setPaymentMethod('Cash');
     setNotes('');
     setReserveStock(true);
@@ -149,13 +220,20 @@ export default function Orders() {
       showAlert('error', 'Basket is empty.');
       return;
     }
+    if (!expectedDeliveryDate) {
+      showAlert('error', 'Expected delivery date is required.');
+      return;
+    }
 
     try {
       const payload = {
         customerId: selectedCustomer.id,
+        expectedDeliveryDate,
         notes,
         discount,
-        paidAmount,
+        deliveryCharge: 0,
+        installationCharge: 0,
+        advancePayment,
         paymentMethod,
         reserveStock,
         items: orderItems
@@ -234,13 +312,13 @@ export default function Orders() {
   };
 
   const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(prodSearch.toLowerCase()) ||
-    p.code.toLowerCase().includes(prodSearch.toLowerCase())
+    String(p.name || '').toLowerCase().includes(prodSearch.toLowerCase()) ||
+    String(p.code || '').toLowerCase().includes(prodSearch.toLowerCase())
   );
 
   const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
-    c.phone.includes(custSearch)
+    String(c.name || '').toLowerCase().includes(custSearch.toLowerCase()) ||
+    String(c.phone || '').includes(custSearch)
   );
 
   return (
@@ -309,32 +387,39 @@ export default function Orders() {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 font-medium text-stone-700">
-              {orders.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="8" className="p-8 text-center text-stone-400 font-bold">Loading orders...</td>
+                </tr>
+              ) : orders.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="p-8 text-center text-stone-400 font-bold">No orders found.</td>
                 </tr>
               ) : (
                 orders.map((o) => {
-                  const isCancelled = o.status === 'Cancelled';
-                  const isConverted = o.status === 'Converted';
-                  const balance = o.grandTotal - o.paidAmount;
+                  const status = getOrderStatus(o);
+                  const totalAmount = getOrderTotal(o);
+                  const advancePaid = getOrderAdvance(o);
+                  const balance = getOrderBalance(o);
+                  const isCancelled = status === 'Cancelled';
+                  const isCompleted = status === 'Delivered' || status === 'Converted';
                   return (
                     <tr key={o.id} className={`hover:bg-stone-50 ${isCancelled ? 'bg-red-50/10' : ''}`}>
                       <td className="p-3.5 font-bold text-stone-850">{o.orderNumber}</td>
-                      <td className="p-3.5 text-stone-450">{new Date(o.date).toLocaleDateString()}</td>
+                      <td className="p-3.5 text-stone-450">{formatDate(getOrderDate(o))}</td>
                       <td className="p-3.5 font-bold text-stone-850">{o.customer?.name}</td>
-                      <td className="p-3.5 text-right font-semibold">Rs. {o.grandTotal.toLocaleString()}</td>
-                      <td className="p-3.5 text-right text-green-700">Rs. {o.paidAmount.toLocaleString()}</td>
-                      <td className="p-3.5 text-right font-black text-stone-900">Rs. {balance.toLocaleString()}</td>
+                      <td className="p-3.5 text-right font-semibold">Rs. {formatCurrency(totalAmount)}</td>
+                      <td className="p-3.5 text-right text-green-700">Rs. {formatCurrency(advancePaid)}</td>
+                      <td className="p-3.5 text-right font-black text-stone-900">Rs. {formatCurrency(balance)}</td>
                       <td className="p-3.5">
                         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
                           isCancelled 
                             ? 'bg-red-100 text-red-800' 
-                            : isConverted 
+                            : isCompleted 
                               ? 'bg-green-100 text-green-800' 
                               : 'bg-orange-100 text-orange-850'
                         }`}>
-                          {o.status}
+                          {status}
                         </span>
                       </td>
                       <td className="p-3.5">
@@ -347,7 +432,7 @@ export default function Orders() {
                             {translate("View", "විස්තර")}
                           </button>
 
-                          {o.status === 'Pending' && (
+                          {status === 'Pending' && balance > 0 && (
                             <button
                               onClick={() => handleOpenPayment(o)}
                               className="p-1 rounded bg-wood-555 border border-wood-200 hover:bg-wood-600 hover:text-white text-wood-650 transition-all flex items-center gap-1 text-[10px] px-2 font-bold shadow-sm"
@@ -488,7 +573,7 @@ export default function Orders() {
                             />
                           </td>
                           <td className="p-2 text-right font-black text-stone-900">
-                            Rs. {(item.quantity * item.unitPrice - item.discount).toLocaleString()}
+                            Rs. {formatCurrency(item.quantity * item.unitPrice - item.discount)}
                           </td>
                           <td className="p-2 text-center">
                             <button onClick={() => removeItem(item.productId)} className="text-stone-400 hover:text-red-650">
@@ -517,7 +602,18 @@ export default function Orders() {
               </div>
 
               {/* Payments & Summary fields */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 text-xs font-semibold">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-4 text-xs font-semibold">
+                <div>
+                  <label className="block text-stone-500">Expected Delivery *</label>
+                  <input
+                    type="date"
+                    required
+                    value={expectedDeliveryDate}
+                    onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+                    className="mt-1 block w-full rounded-lg border border-stone-200 px-3 py-1.5 bg-stone-50 text-stone-850 font-bold"
+                  />
+                </div>
+
                 <div>
                   <label className="block text-stone-500">Invoice Discount (Rs.)</label>
                   <input
@@ -532,8 +628,8 @@ export default function Orders() {
                   <label className="block text-stone-500">Advance Deposit Paid (Rs.)</label>
                   <input
                     type="number"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
+                    value={advancePayment}
+                    onChange={(e) => setAdvancePayment(parseFloat(e.target.value) || 0)}
                     className="mt-1 block w-full rounded-lg border border-stone-205 px-3 py-1.5 bg-stone-50 text-stone-900 text-right font-extrabold"
                   />
                 </div>
@@ -553,8 +649,8 @@ export default function Orders() {
               </div>
 
               <div className="flex justify-between items-center text-xs font-bold bg-stone-50 p-3 rounded-lg border border-stone-200/50">
-                <span>Subtotal: Rs. {subtotal.toLocaleString()}</span>
-                <span className="text-sm font-black text-wood-700">Estimated Total: Rs. {grandTotal.toLocaleString()}</span>
+                <span>Subtotal: Rs. {formatCurrency(subtotal)}</span>
+                <span className="text-sm font-black text-wood-700">Estimated Total: Rs. {formatCurrency(grandTotal)}</span>
               </div>
 
               <div>
@@ -600,7 +696,7 @@ export default function Orders() {
                   <Award size={18} className="text-wood-650" />
                   Order Reservation Details: {selectedOrder.orderNumber}
                 </h3>
-                <span className="text-[10px] text-stone-400 font-semibold">Reserve Stock Lock: {selectedOrder.reserveStock ? 'YES' : 'NO'}</span>
+                <span className="text-[10px] text-stone-400 font-semibold">Reserve Stock Lock: {isStockReserved(selectedOrder) ? 'YES' : 'NO'}</span>
               </div>
               <button onClick={() => setDetailsModalOpen(false)} className="text-stone-400 hover:text-stone-800">
                 <X size={20} />
@@ -608,7 +704,7 @@ export default function Orders() {
             </div>
 
             {/* Actions for Pending Orders */}
-            {selectedOrder.status === 'Pending' && (
+            {getOrderStatus(selectedOrder) === 'Pending' && (
               <div className="mt-4 p-4 rounded-lg bg-stone-50 border border-stone-200 flex justify-between items-center gap-4">
                 <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Order Conversion / බිල්පත් බවට පරිවර්තනය:</span>
                 <button
@@ -630,8 +726,9 @@ export default function Orders() {
               </div>
               <div className="text-right">
                 <p className="text-stone-400 uppercase text-[10px] mb-0.5">Order Info</p>
-                <p>Date: {new Date(selectedOrder.date).toLocaleString()}</p>
-                <p>Status: <span className="font-bold text-wood-700">{selectedOrder.status}</span></p>
+                <p>Date: {formatDate(getOrderDate(selectedOrder), true)}</p>
+                <p>Expected Delivery: {formatDate(getOrderExpectedDate(selectedOrder))}</p>
+                <p>Status: <span className="font-bold text-wood-700">{getOrderStatus(selectedOrder)}</span></p>
               </div>
             </div>
 
@@ -653,10 +750,10 @@ export default function Orders() {
                     <tr key={item.id}>
                       <td className="p-3 font-bold">{item.productCode}</td>
                       <td className="p-3">{item.productName}</td>
-                      <td className="p-3 text-right">Rs. {item.unitPrice.toLocaleString()}</td>
+                      <td className="p-3 text-right">Rs. {formatCurrency(item.unitPrice)}</td>
                       <td className="p-3 text-center">{item.quantity}</td>
-                      <td className="p-3 text-right text-green-700">- Rs. {item.discount.toLocaleString()}</td>
-                      <td className="p-3 text-right font-black text-stone-900">Rs. {item.lineTotal.toLocaleString()}</td>
+                      <td className="p-3 text-right text-green-700">- Rs. {formatCurrency(item.discount)}</td>
+                      <td className="p-3 text-right font-black text-stone-900">Rs. {formatCurrency(item.lineTotal)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -667,30 +764,30 @@ export default function Orders() {
             <div className="text-right space-y-1.5 text-xs font-semibold text-stone-600 mt-4 pr-1">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
-                <span>Rs. {selectedOrder.subtotal.toLocaleString()}</span>
+                <span>Rs. {formatCurrency(selectedOrder.subtotal)}</span>
               </div>
-              {selectedOrder.discount > 0 && (
+              {asNumber(selectedOrder.discount) > 0 && (
                 <div className="flex justify-between text-green-700">
                   <span>Discount:</span>
-                  <span>- Rs. {selectedOrder.discount.toLocaleString()}</span>
+                  <span>- Rs. {formatCurrency(selectedOrder.discount)}</span>
                 </div>
               )}
               <div className="flex justify-between border-t-2 border-stone-200 pt-1.5 text-sm font-black text-stone-900 bg-stone-50 p-2 rounded-lg">
                 <span>Grand Total:</span>
-                <span>Rs. {selectedOrder.grandTotal.toLocaleString()}</span>
+                <span>Rs. {formatCurrency(getOrderTotal(selectedOrder))}</span>
               </div>
               <div className="flex justify-between text-green-700">
                 <span>Advance Paid:</span>
-                <span>Rs. {selectedOrder.paidAmount.toLocaleString()}</span>
+                <span>Rs. {formatCurrency(getOrderAdvance(selectedOrder))}</span>
               </div>
               <div className="flex justify-between border-t border-dashed border-stone-300 pt-1 text-xs font-black text-red-750">
                 <span>Outstanding Balance:</span>
-                <span>Rs. {(selectedOrder.grandTotal - selectedOrder.paidAmount).toLocaleString()}</span>
+                <span>Rs. {formatCurrency(getOrderBalance(selectedOrder))}</span>
               </div>
             </div>
 
             {/* Cancel Button (Admin only) */}
-            {user?.role === 'ADMIN' && selectedOrder.status === 'Pending' && (
+            {user?.role === 'ADMIN' && getOrderStatus(selectedOrder) === 'Pending' && (
               <div className="mt-6 p-4 rounded-lg bg-red-50 border border-red-200 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <ShieldAlert size={20} className="text-red-650" />
@@ -734,7 +831,7 @@ export default function Orders() {
               </div>
               <div className="flex justify-between text-red-750">
                 <span>Outstanding Balance:</span>
-                <span>Rs. {(selectedOrder.grandTotal - selectedOrder.paidAmount).toLocaleString()}</span>
+                <span>Rs. {formatCurrency(getOrderBalance(selectedOrder))}</span>
               </div>
             </div>
 

@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma.js';
+import { getOrSetCache, invalidateCache } from '../utils/cache.js';
+import { getJwtSecret } from '../utils/authConfig.js';
 
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'alight_furniture_billing_secret_key_123';
+const JWT_SECRET = getJwtSecret();
 
 export async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -14,9 +15,11 @@ export async function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    });
+    const user = await getOrSetCache(
+      `auth:user:${decoded.id}`,
+      () => prisma.user.findUnique({ where: { id: decoded.id } }),
+      60_000
+    );
 
     if (!user || !user.active) {
       return res.status(403).json({ error: 'User account is inactive or not found.' });
@@ -28,6 +31,10 @@ export async function authenticateToken(req, res, next) {
     console.error('JWT Verification Error:', error);
     return res.status(401).json({ error: 'Invalid or expired access token.' });
   }
+}
+
+export function invalidateAuthUser(userId) {
+  invalidateCache(`auth:user:${userId}`);
 }
 
 export function authorizeRoles(...allowedRoles) {

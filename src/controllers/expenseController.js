@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import { invalidateCache } from '../utils/cache.js';
 
 const prisma = new PrismaClient();
+
+function invalidateExpenseRelatedCache() {
+  invalidateCache('dashboard:');
+}
 
 export async function getExpenses(req, res) {
   const { expenseType, category, search, dateFrom, dateTo } = req.query;
@@ -70,6 +75,7 @@ export async function createExpense(req, res) {
       },
     });
 
+    invalidateExpenseRelatedCache();
     return res.status(201).json(expense);
   } catch (error) {
     console.error('Create expense error:', error);
@@ -108,6 +114,7 @@ export async function updateExpense(req, res) {
       },
     });
 
+    invalidateExpenseRelatedCache();
     return res.json(updated);
   } catch (error) {
     console.error('Update expense error:', error);
@@ -129,6 +136,7 @@ export async function deleteExpense(req, res) {
     }
 
     await prisma.expense.delete({ where: { id } });
+    invalidateExpenseRelatedCache();
     return res.json({ message: 'Expense deleted successfully.' });
   } catch (error) {
     console.error('Delete expense error:', error);

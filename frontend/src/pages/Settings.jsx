@@ -89,10 +89,10 @@ export default function Settings() {
     loadData();
   }, []);
 
-  const showAlert = (type, text) => {
+  function showAlert(type, text) {
     setAlertMsg({ type, text });
     setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
-  };
+  }
 
   const handleBizSubmit = async (e) => {
     e.preventDefault();
@@ -380,6 +380,8 @@ export default function Settings() {
                     className="mt-1 block w-full rounded-lg border border-stone-200 px-3 py-2 bg-stone-50 text-stone-850 font-bold"
                   >
                     <option value="CASHIER">CASHIER (මුදල් අයකැමි)</option>
+                    <option value="SALESPERSON">SALESPERSON (විකුණුම්)</option>
+                    <option value="DELIVERY_STAFF">DELIVERY STAFF (බෙදාහැරීම්)</option>
                     <option value="ADMIN">ADMINISTRATOR (පරිපාලක)</option>
                   </select>
                 </div>

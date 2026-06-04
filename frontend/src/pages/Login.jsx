@@ -30,11 +30,10 @@ export default function Login() {
   useEffect(() => {
     async function checkAdminSetup() {
       try {
-        const response = await api.get('/auth/me').catch(err => err.response);
-        // If error response status is 404 or specific setup trigger from backend
-        // We will just do a lightweight probe to see if setup-admin is needed
+        const response = await api.get('/auth/setup-status');
+        setNeedsSetup(Boolean(response.data?.needsSetup));
       } catch (err) {
-        // Safe fallback
+        console.error('Setup status check failed:', err);
       }
     }
     checkAdminSetup();
@@ -59,7 +58,8 @@ export default function Login() {
     } catch (err) {
       setError(err);
       // Check if it's the "No users found" setup error
-      if (err.includes('No users found') || err.includes('setup') || err.toLowerCase().includes('initial')) {
+      const message = String(err || '');
+      if (message.includes('No users found') || message.includes('setup') || message.toLowerCase().includes('initial')) {
         setNeedsSetup(true);
       }
     } finally {

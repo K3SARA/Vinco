@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { Truck, Search, Eye, Edit2, CheckCircle, X, ShieldAlert } from 'lucide-react';
 
 export default function Deliveries() {
@@ -12,6 +13,7 @@ export default function Deliveries() {
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
   const [statusFilter, setStatusFilter] = useState('');
 
   // Modals state
@@ -27,6 +29,11 @@ export default function Deliveries() {
 
   const translate = (en, si) => (lang === 'en' ? en : si);
 
+  function showAlert(type, text) {
+    setAlertMsg({ type, text });
+    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  }
+
   useEffect(() => {
     const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
@@ -36,7 +43,7 @@ export default function Deliveries() {
   const loadDeliveries = async () => {
     setLoading(true);
     try {
-      const query = `?search=${searchTerm}&deliveryStatus=${statusFilter}`;
+      const query = `?search=${encodeURIComponent(debouncedSearchTerm)}&deliveryStatus=${statusFilter}`;
       const res = await api.get(`/deliveries${query}`);
       setDeliveries(res.data);
     } catch (err) {
@@ -49,12 +56,7 @@ export default function Deliveries() {
 
   useEffect(() => {
     loadDeliveries();
-  }, [searchTerm, statusFilter]);
-
-  const showAlert = (type, text) => {
-    setAlertMsg({ type, text });
-    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
-  };
+  }, [debouncedSearchTerm, statusFilter]);
 
   const handleOpenStatusModal = (deliv) => {
     setSelectedDelivery(deliv);

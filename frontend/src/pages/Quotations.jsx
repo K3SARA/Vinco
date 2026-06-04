@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { 
   FileMinus, Plus, Search, Edit, Trash2, X, ShoppingCart, 
   Award, Eye, Printer, CheckCircle
@@ -17,6 +18,7 @@ export default function Quotations() {
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
 
   // Modals state
   const [quotationModalOpen, setQuotationModalOpen] = useState(false);
@@ -40,17 +42,52 @@ export default function Quotations() {
 
   const translate = (en, si) => (lang === 'en' ? en : si);
 
+  function showAlert(type, text) {
+    setAlertMsg({ type, text });
+    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  }
+
+  const filteredCustomers = customers
+    .filter((customer) => {
+      const query = custSearch.trim().toLowerCase();
+      if (!query) return false;
+      return (
+        customer.name.toLowerCase().includes(query) ||
+        customer.phone.includes(query)
+      );
+    })
+    .slice(0, 8);
+
+  const filteredProducts = products
+    .filter((product) => {
+      const query = prodSearch.trim().toLowerCase();
+      if (!query) return false;
+      return (
+        product.name.toLowerCase().includes(query) ||
+        product.code.toLowerCase().includes(query)
+      );
+    })
+    .slice(0, 8);
+
   useEffect(() => {
     const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);
 
-  const loadData = async () => {
+  const loadQuotations = async () => {
     setLoading(true);
     try {
-      const qRes = await api.get(`/quotations?search=${searchTerm}`);
+      const qRes = await api.get(`/quotations?search=${encodeURIComponent(debouncedSearchTerm)}`);
       setQuotations(qRes.data);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Failed to retrieve data.');
+    }
+  };
+
+  const loadLookups = async () => {
+    try {
       const prodRes = await api.get('/products?status=Active');
       setProducts(prodRes.data);
       const custRes = await api.get('/customers?status=Active');
@@ -63,14 +100,32 @@ export default function Quotations() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [searchTerm]);
-
-  const showAlert = (type, text) => {
-    setAlertMsg({ type, text });
-    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [qRes, prodRes, custRes] = await Promise.all([
+        api.get(`/quotations?search=${encodeURIComponent(debouncedSearchTerm)}`),
+        api.get('/products?status=Active'),
+        api.get('/customers?status=Active'),
+      ]);
+      setQuotations(qRes.data);
+      setProducts(prodRes.data);
+      setCustomers(custRes.data);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Failed to retrieve data.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadLookups();
+  }, []);
+
+  useEffect(() => {
+    loadQuotations();
+  }, [debouncedSearchTerm]);
 
   const handleOpenAdd = () => {
     setSelectedQuotation(null);

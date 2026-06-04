@@ -1,0 +1,20 @@
+export const ROLES = {
+  ADMIN: 'ADMIN',
+  CASHIER: 'CASHIER',
+  SALESPERSON: 'SALESPERSON',
+  DELIVERY_STAFF: 'DELIVERY_STAFF',
+};
+
+export const ROLE_GROUPS = {
+  ALL: [ROLES.ADMIN, ROLES.CASHIER, ROLES.SALESPERSON, ROLES.DELIVERY_STAFF],
+  SALES_DESK: [ROLES.ADMIN, ROLES.CASHIER, ROLES.SALESPERSON],
+  CASH_DESK: [ROLES.ADMIN, ROLES.CASHIER],
+  DELIVERY_DESK: [ROLES.ADMIN, ROLES.CASHIER, ROLES.DELIVERY_STAFF],
+  ADMIN_ONLY: [ROLES.ADMIN],
+};
+
+export function canAccess(user, roles) {
+  if (!roles) return true;
+  if (!user) return false;
+  return roles.includes(user.role);
+}

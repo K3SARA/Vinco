@@ -1,7 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import { calculateSupplierBalanceAfter } from '../utils/ledger.js';
+import { getNextDocumentNumber } from '../utils/documentNumbers.js';
+import { invalidateCache } from '../utils/cache.js';
 
 const prisma = new PrismaClient();
+
+function invalidatePurchaseRelatedCache() {
+  invalidateCache(['dashboard:', 'suppliers:', 'products:']);
+}
 
 export async function getPurchases(req, res) {
   const { search, paymentStatus } = req.query;
@@ -83,6 +89,9 @@ export async function createPurchase(req, res) {
   const parsedOther = parseFloat(otherCost) || 0.0;
   const parsedPaidAmount = parseFloat(paidAmount) || 0.0;
 
+  if (parsedTransport < 0 || parsedLoading < 0 || parsedOther < 0) {
+    return res.status(400).json({ error: 'Purchase costs cannot be negative.' });
+  }
   if (parsedPaidAmount < 0) {
     return res.status(400).json({ error: 'Paid amount cannot be negative.' });
   }
@@ -129,6 +138,10 @@ export async function createPurchase(req, res) {
       const grandTotal = Number((subtotal + parsedTransport + parsedLoading + parsedOther).toFixed(2));
       const balanceAmount = Number((grandTotal - parsedPaidAmount).toFixed(2));
 
+      if (parsedPaidAmount > grandTotal) {
+        throw new Error(`Paid amount cannot exceed purchase total. Purchase total: ${grandTotal}`);
+      }
+
       let paymentStatus = 'CREDIT';
       if (parsedPaidAmount === grandTotal) {
         paymentStatus = 'PAID';
@@ -137,8 +150,12 @@ export async function createPurchase(req, res) {
       }
 
       // Generate Purchase number
-      const purchaseCount = await tx.purchase.count();
-      const purchaseNumber = `PUR-${new Date().getFullYear()}-${String(purchaseCount + 1).padStart(4, '0')}`;
+      const purchaseNumber = await getNextDocumentNumber(tx, {
+        counterName: 'purchase',
+        prefix: 'PUR-',
+        modelName: 'purchase',
+        fieldName: 'purchaseNumber',
+      });
 
       // Create Purchase
       const purchase = await tx.purchase.create({
@@ -164,16 +181,14 @@ export async function createPurchase(req, res) {
 
       // Increase stock quantities & add StockMovements
       for (const item of purchase.items) {
-        const prod = await tx.product.findUnique({ where: { id: item.productId } });
-        const newStock = prod.stockQty + item.quantity;
-
         // Also update product's costPrice to latest purchased costPrice
-        await tx.product.update({
+        const updatedProduct = await tx.product.update({
           where: { id: item.productId },
           data: { 
-            stockQty: newStock,
+            stockQty: { increment: item.quantity },
             costPrice: item.costPrice 
           },
+          select: { stockQty: true },
         });
 
         await tx.stockMovement.create({
@@ -184,7 +199,7 @@ export async function createPurchase(req, res) {
             referenceId: purchase.id,
             quantityIn: item.quantity,
             quantityOut: 0,
-            balanceAfter: newStock,
+            balanceAfter: updatedProduct.stockQty,
             description: `Purchased in Purchase ${purchaseNumber}`,
           },
         });
@@ -227,8 +242,12 @@ export async function createPurchase(req, res) {
         });
 
         // Supplier payment record
-        const sPaymentCount = await tx.supplierPayment.count();
-        const sPaymentNo = `SPAY-${new Date().getFullYear()}-${String(sPaymentCount + 1).padStart(4, '0')}`;
+        const sPaymentNo = await getNextDocumentNumber(tx, {
+          counterName: 'supplier-payment',
+          prefix: 'SPAY-',
+          modelName: 'supplierPayment',
+          fieldName: 'paymentNumber',
+        });
         await tx.supplierPayment.create({
           data: {
             paymentNumber: sPaymentNo,
@@ -253,6 +272,7 @@ export async function createPurchase(req, res) {
       return purchase;
     });
 
+    invalidatePurchaseRelatedCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Create purchase error:', error);
@@ -312,8 +332,12 @@ export async function addPurchasePayment(req, res) {
       });
 
       // Create SupplierPayment record
-      const sPaymentCount = await tx.supplierPayment.count();
-      const sPaymentNo = `SPAY-${new Date().getFullYear()}-${String(sPaymentCount + 1).padStart(4, '0')}`;
+      const sPaymentNo = await getNextDocumentNumber(tx, {
+        counterName: 'supplier-payment',
+        prefix: 'SPAY-',
+        modelName: 'supplierPayment',
+        fieldName: 'paymentNumber',
+      });
       await tx.supplierPayment.create({
         data: {
           paymentNumber: sPaymentNo,
@@ -352,6 +376,7 @@ export async function addPurchasePayment(req, res) {
       return updatedPurchase;
     });
 
+    invalidatePurchaseRelatedCache();
     return res.json(result);
   } catch (error) {
     console.error('Purchase payment error:', error);
@@ -379,12 +404,19 @@ export async function deletePurchase(req, res) {
 
       // Restoring stock quantities (decrements stockQty since purchase introduced them)
       for (const item of purchase.items) {
-        const prod = await tx.product.findUnique({ where: { id: item.productId } });
-        const restoredStock = prod.stockQty - item.quantity;
-        
-        await tx.product.update({
+        const updateResult = await tx.product.updateMany({
+          where: {
+            id: item.productId,
+            stockQty: { gte: item.quantity },
+          },
+          data: { stockQty: { decrement: item.quantity } },
+        });
+        if (updateResult.count !== 1) {
+          throw new Error(`Cannot delete purchase ${purchase.purchaseNumber}: current stock for ${item.productName} is lower than the purchased quantity.`);
+        }
+        const updatedProduct = await tx.product.findUnique({
           where: { id: item.productId },
-          data: { stockQty: restoredStock },
+          select: { stockQty: true },
         });
 
         // Log StockMovement release/reversal
@@ -396,7 +428,7 @@ export async function deletePurchase(req, res) {
             referenceId: purchase.id,
             quantityIn: 0,
             quantityOut: item.quantity,
-            balanceAfter: restoredStock,
+            balanceAfter: updatedProduct.stockQty,
             description: `Reversal - Deleted Purchase Record ${purchase.purchaseNumber}`,
           },
         });
@@ -454,6 +486,7 @@ export async function deletePurchase(req, res) {
       return { purchaseNo: purchase.purchaseNumber };
     });
 
+    invalidatePurchaseRelatedCache();
     return res.json({ message: 'Purchase deleted successfully and stock reversed.', result });
   } catch (error) {
     console.error('Delete purchase error:', error);

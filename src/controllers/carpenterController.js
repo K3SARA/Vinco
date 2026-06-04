@@ -1,8 +1,13 @@
 import { PrismaClient } from '@prisma/client';
+import { invalidateCache } from '../utils/cache.js';
 
 const prisma = new PrismaClient();
 
 const CARPENTER_TRANSACTION_TYPES = new Set(['PAYMENT', 'CREDIT']);
+
+function invalidateCarpenterRelatedCache() {
+  invalidateCache('dashboard:');
+}
 
 function normalizeCarpenterTransactionType(value = 'PAYMENT') {
   const normalized = String(value || 'PAYMENT').trim().toUpperCase();
@@ -36,6 +41,99 @@ function summarizeCarpenterTransactions(payments = []) {
 
   summary.netBalance = summary.totalPaid - summary.totalCredit;
   return summary;
+}
+
+function parseLedgerDateRange({ from, to }) {
+  const range = {};
+
+  if (from) {
+    const fromDate = new Date(from);
+    if (!Number.isNaN(fromDate.getTime())) {
+      fromDate.setHours(0, 0, 0, 0);
+      range.from = fromDate;
+    }
+  }
+
+  if (to) {
+    const toDate = new Date(to);
+    if (!Number.isNaN(toDate.getTime())) {
+      toDate.setHours(23, 59, 59, 999);
+      range.to = toDate;
+    }
+  }
+
+  return range;
+}
+
+function isInsideLedgerDateRange(date, { from, to }) {
+  const entryDate = new Date(date);
+  if (from && entryDate < from) return false;
+  if (to && entryDate > to) return false;
+  return true;
+}
+
+function buildCarpenterLedgerEntries(payments = [], dateRange = {}) {
+  let runningBalance = 0;
+  let openingBalance = 0;
+  let closingBalance = 0;
+  let hasPeriodEntry = false;
+  const entries = [];
+  const periodSummary = getEmptyCarpenterAccountSummary();
+
+  for (const payment of payments) {
+    const transactionType = normalizeCarpenterTransactionType(payment.transactionType);
+    const amount = Number(payment.amount || 0);
+    const balanceBefore = runningBalance;
+    const signedAmount = transactionType === 'CREDIT' ? -amount : amount;
+    const entryDate = new Date(payment.date);
+
+    runningBalance += signedAmount;
+
+    if (!isInsideLedgerDateRange(payment.date, dateRange)) {
+      if (dateRange.from && entryDate < dateRange.from) {
+        openingBalance = runningBalance;
+      }
+      continue;
+    }
+
+    if (!hasPeriodEntry) {
+      openingBalance = balanceBefore;
+      hasPeriodEntry = true;
+    }
+    closingBalance = runningBalance;
+
+    if (transactionType === 'CREDIT') {
+      periodSummary.totalCredit += amount;
+    } else {
+      periodSummary.totalPaid += amount;
+    }
+
+    entries.push({
+      id: payment.id,
+      date: payment.date,
+      referenceNo: `CP-${String(payment.id).slice(0, 8).toUpperCase()}`,
+      transactionType,
+      description: payment.notes || (transactionType === 'CREDIT' ? 'Received / credit from carpenter' : 'Payment / advance to carpenter'),
+      amount,
+      paid: transactionType === 'PAYMENT' ? amount : 0,
+      credit: transactionType === 'CREDIT' ? amount : 0,
+      balanceBefore,
+      balanceAfter: runningBalance,
+      createdAt: payment.createdAt,
+    });
+  }
+
+  periodSummary.netBalance = periodSummary.totalPaid - periodSummary.totalCredit;
+
+  return {
+    entries: entries.reverse(),
+    openingBalance,
+    closingBalance: hasPeriodEntry ? closingBalance : openingBalance,
+    accountBalance: runningBalance,
+    totalPaid: periodSummary.totalPaid,
+    totalCredit: periodSummary.totalCredit,
+    netBalance: periodSummary.netBalance,
+  };
 }
 
 export async function getCarpenters(req, res) {
@@ -119,6 +217,7 @@ export async function createCarpenter(req, res) {
       },
     });
 
+    invalidateCarpenterRelatedCache();
     return res.status(201).json(carpenter);
   } catch (error) {
     console.error('Create carpenter error:', error);
@@ -149,6 +248,7 @@ export async function updateCarpenter(req, res) {
       },
     });
 
+    invalidateCarpenterRelatedCache();
     return res.json(carpenter);
   } catch (error) {
     console.error('Update carpenter error:', error);
@@ -167,10 +267,12 @@ export async function deleteCarpenter(req, res) {
         where: { id },
         data: { active: false },
       });
+      invalidateCarpenterRelatedCache();
       return res.json({ message: 'Carpenter has payment history and was marked inactive.', carpenter });
     }
 
     await prisma.carpenter.delete({ where: { id } });
+    invalidateCarpenterRelatedCache();
     return res.json({ message: 'Carpenter deleted successfully.' });
   } catch (error) {
     console.error('Delete carpenter error:', error);
@@ -220,6 +322,35 @@ export async function getCarpenterPayments(req, res) {
   }
 }
 
+export async function getCarpenterLedger(req, res) {
+  const { id } = req.params;
+  const dateRange = parseLedgerDateRange(req.query);
+
+  try {
+    const [carpenter, payments] = await Promise.all([
+      prisma.carpenter.findUnique({ where: { id } }),
+      prisma.carpenterPayment.findMany({
+        where: { carpenterId: id },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      }),
+    ]);
+
+    if (!carpenter) {
+      return res.status(404).json({ error: 'Carpenter not found.' });
+    }
+
+    const ledger = buildCarpenterLedgerEntries(payments, dateRange);
+
+    return res.json({
+      carpenter,
+      ...ledger,
+    });
+  } catch (error) {
+    console.error('Get carpenter ledger error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+}
+
 export async function addCarpenterPayment(req, res) {
   const { id } = req.params;
   const { amount, date, notes, transactionType = 'PAYMENT' } = req.body;
@@ -249,6 +380,7 @@ export async function addCarpenterPayment(req, res) {
       },
     });
 
+    invalidateCarpenterRelatedCache();
     return res.status(201).json(payment);
   } catch (error) {
     console.error('Add carpenter payment error:', error);
@@ -261,6 +393,7 @@ export async function deleteCarpenterPayment(req, res) {
 
   try {
     await prisma.carpenterPayment.delete({ where: { id } });
+    invalidateCarpenterRelatedCache();
     return res.json({ message: 'Carpenter transaction deleted successfully.' });
   } catch (error) {
     console.error('Delete carpenter payment error:', error);

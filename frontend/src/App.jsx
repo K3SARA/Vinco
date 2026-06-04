@@ -1,8 +1,8 @@
-import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import { ROLE_GROUPS } from './utils/roles';
 
 // Pages
 import Login from './pages/Login';
@@ -20,6 +20,12 @@ import Expenses from './pages/Expenses';
 import Carpenters from './pages/Carpenters';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+
+const guard = (element, roles) => (
+  <ProtectedRoute allowedRoles={roles}>
+    {element}
+  </ProtectedRoute>
+);
 
 export default function App() {
   return (
@@ -42,35 +48,35 @@ export default function App() {
             <Route index element={<Dashboard />} />
             
             {/* Inventory Modules */}
-            <Route path="products" element={<Products />} />
+            <Route path="products" element={guard(<Products />, ROLE_GROUPS.SALES_DESK)} />
             
             {/* Customer & Receivable Ledger Modules */}
-            <Route path="customers" element={<Customers />} />
+            <Route path="customers" element={guard(<Customers />, ROLE_GROUPS.SALES_DESK)} />
             
             {/* POS Billing Screen */}
-            <Route path="billing" element={<Billing />} />
+            <Route path="billing" element={guard(<Billing />, ROLE_GROUPS.CASH_DESK)} />
             
             {/* Transaction Ledger Auditing */}
-            <Route path="invoices" element={<Invoices />} />
+            <Route path="invoices" element={guard(<Invoices />, ROLE_GROUPS.CASH_DESK)} />
             
             {/* Proposals & Custom Reservation Pipelines */}
-            <Route path="quotations" element={<Quotations />} />
-            <Route path="orders" element={<Orders />} />
-            <Route path="deliveries" element={<Deliveries />} />
+            <Route path="quotations" element={guard(<Quotations />, ROLE_GROUPS.SALES_DESK)} />
+            <Route path="orders" element={guard(<Orders />, ROLE_GROUPS.SALES_DESK)} />
+            <Route path="deliveries" element={guard(<Deliveries />, ROLE_GROUPS.DELIVERY_DESK)} />
             
             {/* Supplier & Payables Modules */}
-            <Route path="suppliers" element={<Suppliers />} />
-            <Route path="purchases" element={<Purchases />} />
+            <Route path="suppliers" element={guard(<Suppliers />, ROLE_GROUPS.ADMIN_ONLY)} />
+            <Route path="purchases" element={guard(<Purchases />, ROLE_GROUPS.ADMIN_ONLY)} />
             
             {/* Operating Overheads Ledger */}
-            <Route path="expenses" element={<Expenses />} />
-            <Route path="carpenters" element={<Carpenters />} />
+            <Route path="expenses" element={guard(<Expenses />, ROLE_GROUPS.CASH_DESK)} />
+            <Route path="carpenters" element={guard(<Carpenters />, ROLE_GROUPS.CASH_DESK)} />
             
             {/* Analytical Performance Reports */}
-            <Route path="reports" element={<Reports />} />
+            <Route path="reports" element={guard(<Reports />, ROLE_GROUPS.ADMIN_ONLY)} />
             
             {/* Control Panel Settings */}
-            <Route path="settings" element={<Settings />} />
+            <Route path="settings" element={guard(<Settings />, ROLE_GROUPS.ADMIN_ONLY)} />
 
             {/* fallback redirects */}
             <Route path="*" element={<Navigate to="/" replace />} />

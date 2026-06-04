@@ -1,30 +1,44 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma.js';
 import { calculateCustomerBalanceAfter } from '../utils/ledger.js';
+import { getNextDocumentNumber } from '../utils/documentNumbers.js';
+import { getOrSetCache, invalidateCache } from '../utils/cache.js';
 
-const prisma = new PrismaClient();
+const customerCachePrefix = ['dashboard:', 'customers:'];
+
+function invalidateCustomerCache() {
+  invalidateCache(customerCachePrefix);
+}
 
 export async function getCustomers(req, res) {
   const { search, status } = req.query;
 
   try {
-    const where = {};
-    if (status) {
-      where.status = status;
-    }
+    const customers = await getOrSetCache(
+      `customers:${JSON.stringify({ search: search || '', status: status || '' })}`,
+      async () => {
+        const where = {};
+        if (status) {
+          where.status = status;
+        }
 
-    let customers = await prisma.customer.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+        let rows = await prisma.customer.findMany({
+          where,
+          orderBy: { name: 'asc' },
+        });
 
-    if (search) {
-      const q = search.toLowerCase();
-      customers = customers.filter(c => 
-        c.name.toLowerCase().includes(q) ||
-        c.phone.includes(q) ||
-        (c.address && c.address.toLowerCase().includes(q))
-      );
-    }
+        if (search) {
+          const q = search.toLowerCase();
+          rows = rows.filter(c =>
+            c.name.toLowerCase().includes(q) ||
+            c.phone.includes(q) ||
+            (c.address && c.address.toLowerCase().includes(q))
+          );
+        }
+
+        return rows;
+      },
+      45_000
+    );
 
     return res.json(customers);
   } catch (error) {
@@ -120,6 +134,7 @@ export async function createCustomer(req, res) {
       return customer;
     });
 
+    invalidateCustomerCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Create customer error:', error);
@@ -150,6 +165,7 @@ export async function updateCustomer(req, res) {
         status: status || 'Active',
       },
     });
+    invalidateCustomerCache();
     return res.json(customer);
   } catch (error) {
     console.error('Update customer error:', error);
@@ -174,6 +190,7 @@ export async function deleteCustomer(req, res) {
     }
 
     await prisma.customer.delete({ where: { id } });
+    invalidateCustomerCache();
     return res.json({ message: 'Customer deleted successfully.' });
   } catch (error) {
     console.error('Delete customer error:', error);
@@ -215,8 +232,12 @@ export async function addPaymentReceived(req, res) {
       }
 
       // Generate payment number
-      const paymentCount = await tx.payment.count();
-      const paymentNumber = `PAY-${new Date().getFullYear()}-${String(paymentCount + 1).padStart(4, '0')}`;
+      const paymentNumber = await getNextDocumentNumber(tx, {
+        counterName: 'payment',
+        prefix: 'PAY-',
+        modelName: 'payment',
+        fieldName: 'paymentNumber',
+      });
 
       // Create Payment
       const payment = await tx.payment.create({
@@ -256,6 +277,7 @@ export async function addPaymentReceived(req, res) {
       return payment;
     });
 
+    invalidateCustomerCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Customer payment error:', error);
@@ -312,6 +334,7 @@ export async function addAdjustment(req, res) {
       return { balanceAfter, referenceNo: refNo };
     });
 
+    invalidateCustomerCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Customer adjustment error:', error);

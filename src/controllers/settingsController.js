@@ -1,7 +1,37 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { invalidateCache } from '../utils/cache.js';
 
 const prisma = new PrismaClient();
+
+const ALLOWED_USER_ROLES = new Set(['ADMIN', 'CASHIER', 'SALESPERSON', 'DELIVERY_STAFF']);
+
+function normalizeRequiredText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeUserRole(role) {
+  const normalized = typeof role === 'string' ? role.trim().toUpperCase() : '';
+  return ALLOWED_USER_ROLES.has(normalized) ? normalized : null;
+}
+
+function parseActiveValue(value, fallback) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+
+  return null;
+}
 
 // ==========================================
 // BUSINESS SETTINGS
@@ -151,20 +181,33 @@ export async function createUser(req, res) {
   }
 
   const { username, password, name, role } = req.body;
-  if (!username || !password || !name || !role) {
+  const cleanUsername = normalizeRequiredText(username);
+  const cleanName = normalizeRequiredText(name);
+  const cleanPassword = typeof password === 'string' ? password : '';
+  const cleanRole = normalizeUserRole(role);
+
+  if (!cleanUsername || !cleanPassword || !cleanName || !role) {
     return res.status(400).json({ error: 'Username, password, name, and role are required.' });
+  }
+
+  if (cleanPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+
+  if (!cleanRole) {
+    return res.status(400).json({ error: 'User role is invalid.' });
   }
 
   try {
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(cleanPassword, salt);
 
     const user = await prisma.user.create({
       data: {
-        username,
+        username: cleanUsername,
         password: hashedPassword,
-        name,
-        role,
+        name: cleanName,
+        role: cleanRole,
       },
     });
 
@@ -198,13 +241,33 @@ export async function updateUser(req, res) {
       return res.status(404).json({ error: 'User not found.' });
     }
 
+    const cleanName = normalizeRequiredText(name) || existing.name;
+    const cleanRole = role === undefined ? existing.role : normalizeUserRole(role);
+    const cleanActive = parseActiveValue(active, existing.active);
+
+    if (!cleanRole) {
+      return res.status(400).json({ error: 'User role is invalid.' });
+    }
+
+    if (cleanActive === null) {
+      return res.status(400).json({ error: 'User active status must be true or false.' });
+    }
+
+    if (existing.id === req.user.id && (cleanRole !== 'ADMIN' || cleanActive === false)) {
+      return res.status(400).json({ error: 'You cannot demote or deactivate your own admin account.' });
+    }
+
     const data = {
-      name: name || existing.name,
-      role: role || existing.role,
-      active: active !== undefined ? active : existing.active,
+      name: cleanName,
+      role: cleanRole,
+      active: cleanActive,
     };
 
-    if (password && password.trim() !== '') {
+    if (typeof password === 'string' && password.trim() !== '') {
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+      }
+
       const salt = await bcrypt.genSalt(10);
       data.password = await bcrypt.hash(password, salt);
     }
@@ -213,6 +276,8 @@ export async function updateUser(req, res) {
       where: { id },
       data,
     });
+
+    invalidateCache(`auth:user:${id}`);
 
     return res.json({
       id: updated.id,
@@ -246,6 +311,7 @@ export async function deleteUser(req, res) {
     }
 
     await prisma.user.delete({ where: { id } });
+    invalidateCache(`auth:user:${id}`);
     return res.json({ message: 'User account deleted successfully.' });
   } catch (error) {
     console.error('Delete user error:', error);

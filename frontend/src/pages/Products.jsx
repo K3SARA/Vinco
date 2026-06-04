@@ -406,8 +406,8 @@ export default function Products() {
          CATEGORY MANAGEMENT MODAL
          ========================================== */}
       {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl border border-stone-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 no-print">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 sm:p-6 shadow-2xl border border-stone-200 flex flex-col max-h-[90dvh] my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <h3 className="text-base font-bold text-stone-850 flex items-center gap-1.5">
                 <Layers size={18} className="text-wood-600" />
@@ -465,23 +465,23 @@ export default function Products() {
          PRODUCT FORM MODAL (ADD & EDIT)
          ========================================== */}
       {productModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-2xl border border-stone-200 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 no-print">
+          <div className="w-full max-w-2xl rounded-xl bg-white p-5 sm:p-6 shadow-2xl border border-stone-200 flex flex-col max-h-[90dvh] my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 flex-none">
               <h3 className="text-base font-bold text-stone-850 flex items-center gap-1.5">
                 <Package size={18} className="text-wood-650" />
                 {selectedProduct ? translate("Modify Furniture Product", "භාණ්ඩයේ විස්තර යාවත්කාලීන කරන්න") : translate("Add New Furniture SKU", "නව භාණ්ඩයක් ලියාපදිංචි කිරීම")}
               </h3>
-              <button onClick={() => setProductModalOpen(false)} className="text-stone-400 hover:text-stone-800">
+              <button onClick={() => setProductModalOpen(false)} className="text-stone-400 hover:text-stone-800 cursor-pointer">
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleProductSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleProductSubmit} className="mt-4 space-y-4 overflow-y-auto flex-1 pr-1.5 -mr-1.5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {/* SKU Code */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Product SKU / SKU කේතය *</label>
+                  <label className="block text-xs font-bold text-stone-600">Product SKU *</label>
                   <input
                     type="text"
                     required
@@ -494,7 +494,7 @@ export default function Products() {
 
                 {/* Name */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Furniture Name / භාණ්ඩයේ නම *</label>
+                  <label className="block text-xs font-bold text-stone-600">Furniture Name *</label>
                   <input
                     type="text"
                     required
@@ -507,7 +507,7 @@ export default function Products() {
 
                 {/* Category */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Category / ප්‍රවර්ගය *</label>
+                  <label className="block text-xs font-bold text-stone-600">Category *</label>
                   <select
                     value={prodForm.categoryId}
                     onChange={(e) => setProdForm({ ...prodForm, categoryId: e.target.value })}
@@ -521,7 +521,7 @@ export default function Products() {
 
                 {/* Material */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Timber / Material (දැව/ද්‍රව්‍ය)</label>
+                  <label className="block text-xs font-bold text-stone-600">Timber / Material</label>
                   <input
                     type="text"
                     value={prodForm.material}
@@ -533,7 +533,7 @@ export default function Products() {
 
                 {/* Size */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Dimensions / Size (ප්‍රමාණය)</label>
+                  <label className="block text-xs font-bold text-stone-600">Dimensions / Size</label>
                   <input
                     type="text"
                     value={prodForm.size}
@@ -545,7 +545,7 @@ export default function Products() {
 
                 {/* Color */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Finish / Color (වර්ණය)</label>
+                  <label className="block text-xs font-bold text-stone-600">Finish / Color</label>
                   <input
                     type="text"
                     value={prodForm.color}
@@ -557,7 +557,7 @@ export default function Products() {
 
                 {/* Cost Price */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Cost Price / මිලදීගත් මිල (Rs.) *</label>
+                  <label className="block text-xs font-bold text-stone-600">Cost Price (Rs.) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -570,7 +570,7 @@ export default function Products() {
 
                 {/* Selling Price */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Selling Price / විකුණුම් මිල (Rs.) *</label>
+                  <label className="block text-xs font-bold text-stone-600">Selling Price (Rs.) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -583,7 +583,7 @@ export default function Products() {
 
                 {/* Stock Qty */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Inventory Stock Qty / තොග ප්‍රමාණය *</label>
+                  <label className="block text-xs font-bold text-stone-600">Inventory Stock Qty *</label>
                   <input
                     type="number"
                     required
@@ -595,7 +595,7 @@ export default function Products() {
 
                 {/* Min Stock Alert */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Min Stock Alert Limit / අවම තොග සීමාව *</label>
+                  <label className="block text-xs font-bold text-stone-600">Min Stock Alert Limit *</label>
                   <input
                     type="number"
                     required
@@ -607,7 +607,7 @@ export default function Products() {
 
                 {/* Warranty */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Warranty Period / වගකීම් කාලය</label>
+                  <label className="block text-xs font-bold text-stone-600">Warranty Period</label>
                   <select
                     value={prodForm.warrantyPeriod}
                     onChange={(e) => setProdForm({ ...prodForm, warrantyPeriod: e.target.value })}
@@ -624,7 +624,7 @@ export default function Products() {
 
                 {/* Status */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-600">Status / ක්‍රියාකාරී තත්ත්වය *</label>
+                  <label className="block text-xs font-bold text-stone-600">Status *</label>
                   <select
                     value={prodForm.status}
                     onChange={(e) => setProdForm({ ...prodForm, status: e.target.value })}
@@ -641,7 +641,7 @@ export default function Products() {
                 <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
                   <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
                     <AlertTriangle size={15} />
-                    Audit Log Required / විගණන හේතුවක් ඇතුළත් කරන්න
+                    Audit Log Required
                   </h4>
                   <p className="text-[10px] text-amber-700 font-medium">
                     You adjusted the physical stock count from {selectedProduct.stockQty} to {prodForm.stockQty}. Please state the reason for this manual correction.
@@ -659,7 +659,7 @@ export default function Products() {
 
               {/* Description */}
               <div>
-                <label className="block text-xs font-bold text-stone-600">Description / සටහන්</label>
+                <label className="block text-xs font-bold text-stone-600">Description</label>
                 <textarea
                   rows="2"
                   value={prodForm.description}
@@ -694,19 +694,19 @@ export default function Products() {
          STOCK MOVEMENT HISTORY MODAL
          ========================================== */}
       {historyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-2xl border border-stone-200">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 no-print">
+          <div className="w-full max-w-2xl rounded-xl bg-white p-5 sm:p-6 shadow-2xl border border-stone-200 flex flex-col max-h-[90dvh] my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 flex-none">
               <h3 className="text-base font-bold text-stone-850 flex items-center gap-1.5">
                 <History size={18} className="text-wood-650" />
                 {translate("Stock Movements Trail / ", "තොග වෙනස්වීම් ඉතිහාසය: ")} {selectedProduct?.name}
               </h3>
-              <button onClick={() => setHistoryModalOpen(false)} className="text-stone-400 hover:text-stone-800">
+              <button onClick={() => setHistoryModalOpen(false)} className="text-stone-400 hover:text-stone-800 cursor-pointer">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="mt-4 overflow-y-auto max-h-96 pr-1 space-y-2">
+            <div className="mt-4 overflow-y-auto flex-1 pr-1.5 -mr-1.5 space-y-2">
               {movementsHistory.length === 0 ? (
                 <p className="text-center py-8 text-xs text-stone-400 font-medium">No stock movements found for this product.</p>
               ) : (

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { DollarSign, Plus, Search, Edit2, Trash2, X, CheckCircle } from 'lucide-react';
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import { ArrowDown, ArrowUp, DollarSign, FileSearch, Plus, Search, Edit2, Trash2, X, CheckCircle } from 'lucide-react';
 
 export default function Expenses() {
   const { user } = useAuth();
@@ -12,6 +14,7 @@ export default function Expenses() {
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
   const [categoryFilter, setCategoryFilter] = useState('');
 
   // Modals state
@@ -33,6 +36,11 @@ export default function Expenses() {
 
   const translate = (en, si) => (lang === 'en' ? en : si);
 
+  function showAlert(type, text) {
+    setAlertMsg({ type, text });
+    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  }
+
   useEffect(() => {
     const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
@@ -42,7 +50,7 @@ export default function Expenses() {
   const loadExpenses = async () => {
     setLoading(true);
     try {
-      const query = `?search=${encodeURIComponent(searchTerm)}&expenseType=${encodeURIComponent(categoryFilter)}`;
+      const query = `?search=${encodeURIComponent(debouncedSearchTerm)}&expenseType=${encodeURIComponent(categoryFilter)}`;
       const res = await api.get(`/expenses${query}`);
       setExpenses(Array.isArray(res.data) ? res.data : (res.data.expenses || []));
     } catch (err) {
@@ -55,12 +63,7 @@ export default function Expenses() {
 
   useEffect(() => {
     loadExpenses();
-  }, [searchTerm, categoryFilter]);
-
-  const showAlert = (type, text) => {
-    setAlertMsg({ type, text });
-    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
-  };
+  }, [debouncedSearchTerm, categoryFilter]);
 
   const handleOpenAdd = () => {
     setSelectedExpense(null);
@@ -113,6 +116,77 @@ export default function Expenses() {
   };
 
   const totalExpenseAmount = expenses.reduce((acc, exp) => acc + Number(exp.amount || 0), 0);
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+
+  const emptyCashBook =
+    !loading &&
+    expenses.length === 0 &&
+    !searchTerm &&
+    !categoryFilter &&
+    !alertMsg.text &&
+    !expenseModalOpen;
+
+  if (emptyCashBook) {
+    return (
+      <div className="book-screen">
+        <div className="book-body cash-empty">
+          <section className="soft-card cash-balance-card">
+            <button type="button" className="cash-period-button">
+              This week's balance
+              <span>⌄</span>
+            </button>
+            <strong>Rs. 0</strong>
+          </section>
+
+          <button type="button" className="soft-card report-button">
+            <FileSearch size={35} />
+            View Reports
+          </button>
+
+          <section className="cash-day-card">
+            <div className="cash-day-grid">
+              <span>{todayLabel}</span>
+              <span>In (Rs.)</span>
+              <span>Out (Rs.)</span>
+            </div>
+            <div className="cash-day-grid strong">
+              <strong>0 transactions</strong>
+              <b className="in">0</b>
+              <b className="out">0</b>
+            </div>
+          </section>
+
+          <div className="empty-copy cash-copy">
+            <FileSearch size={90} className="empty-illustration" />
+            <p>Let's make this week's entries</p>
+          </div>
+
+          <div className="cash-actions">
+            <div className="cash-action-copy">
+              <span>Add money you receive (Income)</span>
+              <span className="empty-arrow">↓</span>
+            </div>
+            <div className="cash-action-copy">
+              <span>Add money you paid (Expense)</span>
+              <span className="empty-arrow">↓</span>
+            </div>
+            <Link to="/billing" className="cash-button cash-in">
+              <ArrowUp size={33} />
+              Cash In
+            </Link>
+            <button className="cash-button cash-out" type="button" onClick={handleOpenAdd}>
+              <ArrowDown size={33} />
+              Cash Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

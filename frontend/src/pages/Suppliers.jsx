@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { 
-  Briefcase, Plus, Search, Edit, Trash2, X, FileText, 
-  Receipt, Landmark, CheckCircle
+  Briefcase, Users, Plus, Search, Edit, Trash2, X, FileText, 
+  Receipt, Landmark
 } from 'lucide-react';
 
 export default function Suppliers() {
@@ -15,6 +17,7 @@ export default function Suppliers() {
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
 
   // Modals state
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
@@ -67,7 +70,7 @@ export default function Suppliers() {
   const loadSuppliers = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/suppliers?search=${searchTerm}`);
+      const res = await api.get(`/suppliers?search=${encodeURIComponent(debouncedSearchTerm)}`);
       setSuppliers(res.data);
     } catch (error) {
       console.error(error);
@@ -78,13 +81,14 @@ export default function Suppliers() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSuppliers();
-  }, [searchTerm]);
+  }, [debouncedSearchTerm]);
 
-  const showAlert = (type, text) => {
+  function showAlert(type, text) {
     setAlertMsg({ type, text });
     setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
-  };
+  }
 
   const handleOpenAdd = () => {
     setSelectedSupplier(null);
@@ -155,7 +159,7 @@ export default function Suppliers() {
       setLedgerHistory(res.data);
       setSelectedSupplier(supplier);
       setLedgerModalOpen(true);
-    } catch (err) {
+    } catch {
       showAlert('error', 'Failed to retrieve supplier ledger logs.');
     }
   };
@@ -223,10 +227,170 @@ export default function Suppliers() {
     }
   };
 
+  const money = (value) =>
+    `Rs. ${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const supplierHolds = suppliers.reduce((sum, s) => sum + Math.max(-Number(s.currentBalance || 0), 0), 0);
+  const totalToPay = suppliers.reduce((sum, s) => sum + Math.max(Number(s.currentBalance || 0), 0), 0);
+
   return (
-    <div className="space-y-6">
+    <div className="credit-book-page space-y-4">
+      <section className="credit-book-panel">
+        <div className="credit-book-top credit-section-card">
+          <div>
+            <p className="credit-book-eyebrow">Credit Book</p>
+            <h2 className="credit-book-title">
+              <Briefcase size={22} />
+              Suppliers
+            </h2>
+          </div>
+
+          <button type="button" onClick={handleOpenAdd} className="credit-primary-action">
+            <Plus size={16} />
+            Add Supplier
+          </button>
+        </div>
+
+        <div className="credit-section-card tabs-card">
+          <nav className="credit-book-tabs" aria-label="Credit book pages">
+            <Link to="/customers">
+              <Users size={18} />
+              Customers
+            </Link>
+            <Link to="/suppliers" className="active">
+              <Briefcase size={18} />
+              Suppliers
+            </Link>
+          </nav>
+        </div>
+
+        {alertMsg.text && (
+          <div className={`credit-alert ${alertMsg.type === 'success' ? 'success' : 'error'}`}>
+            {alertMsg.text}
+          </div>
+        )}
+
+        <div className="credit-section-card">
+          <div className="credit-section-heading">
+            <span>Overview</span>
+            <small>{suppliers.length} supplier account{suppliers.length === 1 ? '' : 's'}</small>
+          </div>
+
+          <div className="credit-summary-grid">
+            <div className="credit-summary-card hold">
+              <span>Supplier Holds</span>
+              <strong>{money(supplierHolds)}</strong>
+            </div>
+            <div className="credit-summary-card pay">
+              <span>To Pay</span>
+              <strong>{money(totalToPay)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="credit-section-card compact">
+          <div className="credit-section-heading">
+            <span>Find Accounts</span>
+            <small>Suppliers</small>
+          </div>
+
+          <div className="credit-controls single">
+            <label className="credit-search-box">
+              <Search size={16} />
+              <input
+                type="text"
+                placeholder="Search name, phone or address"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="credit-list-section">
+          <div className="credit-section-heading">
+            <span>Supplier Accounts</span>
+            <small>{suppliers.length ? `${suppliers.length} shown` : 'No records'}</small>
+          </div>
+
+          <div className="credit-cards-panel">
+          {loading ? (
+            <div className="credit-empty-card">
+              <FileText size={44} />
+              <strong>Loading suppliers...</strong>
+            </div>
+          ) : suppliers.length === 0 ? (
+            <div className="credit-empty-card">
+              <FileText size={54} />
+              <strong>No supplier added</strong>
+              <span>Tap the button below and enter the first supplier transaction.</span>
+              <button type="button" onClick={handleOpenAdd} className="credit-primary-action wide">
+                <Plus size={16} />
+                Add Supplier
+              </button>
+            </div>
+          ) : (
+            <div className="credit-card-grid">
+              {suppliers.map((s) => {
+                const balance = Number(s.currentBalance || 0);
+                const hasPayable = balance > 0;
+
+                return (
+                  <article key={s.id} className={`credit-account-card ${hasPayable ? 'supplier-payable' : balance < 0 ? 'advance' : ''}`}>
+                    <div className="credit-account-head">
+                      <div>
+                        <h3>{s.name}</h3>
+                        <p>{s.phone || 'No phone number'}</p>
+                      </div>
+                      <span className={`credit-status ${s.status === 'Active' ? 'active' : 'inactive'}`}>
+                        {s.status}
+                      </span>
+                    </div>
+
+                    <div className="credit-detail-grid">
+                      <div>
+                        <span>Address</span>
+                        <strong>{s.address || '-'}</strong>
+                      </div>
+                      <div>
+                        <span>Balance</span>
+                        <strong className={hasPayable ? 'text-amber-700' : balance < 0 ? 'text-green-650' : 'text-stone-600'}>
+                          {money(balance)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="credit-action-row">
+                      <button type="button" onClick={() => handleViewLedger(s)}>
+                        <FileText size={13} />
+                        Ledger
+                      </button>
+                      <button type="button" onClick={() => handleOpenPayment(s)}>
+                        <Receipt size={13} />
+                        Payment
+                      </button>
+                      <button type="button" onClick={() => handleOpenAdjust(s)} aria-label={`Adjust ${s.name}`}>
+                        <Landmark size={13} />
+                      </button>
+                      <button type="button" onClick={() => handleOpenEdit(s)} aria-label={`Edit ${s.name}`}>
+                        <Edit size={13} />
+                      </button>
+                      {user?.role === 'ADMIN' && (
+                        <button type="button" onClick={() => handleDelete(s.id)} aria-label={`Delete ${s.name}`} className="danger">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          </div>
+        </div>
+      </section>
       {/* HEADER SECTION */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
+      <div className="hidden flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white p-6 rounded-xl border border-stone-200 shadow-sm">
         <div>
           <h2 className="text-xl font-bold text-stone-850 flex items-center gap-2">
             <Briefcase size={22} className="text-wood-650" />
@@ -250,7 +414,7 @@ export default function Suppliers() {
 
       {/* ALERT */}
       {alertMsg.text && (
-        <div className={`p-4 rounded-lg border text-sm font-semibold ${
+        <div className={`hidden p-4 rounded-lg border text-sm font-semibold ${
           alertMsg.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
         }`}>
           {alertMsg.text}
@@ -258,7 +422,7 @@ export default function Suppliers() {
       )}
 
       {/* SEARCH */}
-      <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+      <div className="hidden bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
         <div className="relative">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-stone-400">
             <Search size={16} />
@@ -274,7 +438,7 @@ export default function Suppliers() {
       </div>
 
       {/* SUPPLIERS TABLE */}
-      <div className="rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+      <div className="hidden rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-xs">
             <thead>
@@ -498,7 +662,40 @@ export default function Suppliers() {
               </span>
             </div>
 
-            <div className="mt-4 overflow-y-auto max-h-80 pr-1 border border-stone-150 rounded-lg">
+            <div className="mt-4 ledger-card-list">
+              {ledgerHistory.length === 0 ? (
+                <div className="ledger-empty-card">No logs found in this supplier ledger yet.</div>
+              ) : (
+                ledgerHistory.map((item) => (
+                  <article key={item.id} className="ledger-card supplier">
+                    <div className="ledger-card-main">
+                      <div>
+                        <strong>{item.referenceNo || item.transactionType}</strong>
+                        <span>{new Date(item.date).toLocaleString()}</span>
+                      </div>
+                      <span className="ledger-type">{item.transactionType}</span>
+                    </div>
+                    <p>{item.description}</p>
+                    <div className="ledger-amount-grid">
+                      <div className="credit">
+                        <span>Paid</span>
+                        <strong>{item.debit > 0 ? `- ${money(item.debit)}` : '-'}</strong>
+                      </div>
+                      <div className="debit">
+                        <span>Purchase</span>
+                        <strong>{item.credit > 0 ? `+ ${money(item.credit)}` : '-'}</strong>
+                      </div>
+                      <div>
+                        <span>Balance After</span>
+                        <strong>{money(item.balanceAfter)}</strong>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+
+            <div className="hidden mt-4 overflow-y-auto max-h-80 pr-1 border border-stone-150 rounded-lg">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-stone-100 text-stone-400 font-bold uppercase border-b border-stone-200">

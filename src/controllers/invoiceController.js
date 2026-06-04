@@ -1,8 +1,17 @@
-import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
+import prisma from '../utils/prisma.js';
 import { calculateCustomerBalanceAfter } from '../utils/ledger.js';
+import { getNextDocumentNumber } from '../utils/documentNumbers.js';
+import { getOrSetCache, invalidateCache } from '../utils/cache.js';
 
-const prisma = new PrismaClient();
+function invalidateInvoiceRelatedCache() {
+  invalidateCache(['dashboard:', 'invoices:', 'customers:', 'products:']);
+}
+
+const WRITE_TRANSACTION_OPTIONS = {
+  maxWait: 10_000,
+  timeout: 30_000,
+};
 
 function parseJsonField(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -39,20 +48,28 @@ export async function getInvoices(req, res) {
       }
     }
 
-    let invoices = await prisma.invoice.findMany({
-      where,
-      include: { customer: true },
-      orderBy: { date: 'desc' },
-    });
+    const invoices = await getOrSetCache(
+      `invoices:${JSON.stringify({ search: search || '', paymentStatus: paymentStatus || '', dateFrom: dateFrom || '', dateTo: dateTo || '' })}`,
+      async () => {
+        let rows = await prisma.invoice.findMany({
+          where,
+          include: { customer: true },
+          orderBy: { date: 'desc' },
+        });
 
-    if (search) {
-      const q = search.toLowerCase();
-      invoices = invoices.filter(inv => 
-        inv.invoiceNumber.toLowerCase().includes(q) ||
-        inv.customer.name.toLowerCase().includes(q) ||
-        inv.customer.phone.includes(q)
-      );
-    }
+        if (search) {
+          const q = search.toLowerCase();
+          rows = rows.filter(inv =>
+            inv.invoiceNumber.toLowerCase().includes(q) ||
+            inv.customer.name.toLowerCase().includes(q) ||
+            inv.customer.phone.includes(q)
+          );
+        }
+
+        return rows;
+      },
+      30_000
+    );
 
     return res.json(invoices);
   } catch (error) {
@@ -129,6 +146,9 @@ export async function createInvoice(req, res) {
   const parsedOtherCharge = parseFloat(otherCharge) || 0.0;
   const parsedPaidAmount = parseFloat(paidAmount) || 0.0;
 
+  if (parsedDiscount < 0 || parsedDelCharge < 0 || parsedInstCharge < 0 || parsedOtherCharge < 0) {
+    return res.status(400).json({ error: 'Discounts and charges cannot be negative.' });
+  }
   if (parsedPaidAmount < 0) {
     return res.status(400).json({ error: 'Paid amount cannot be negative.' });
   }
@@ -165,6 +185,9 @@ export async function createInvoice(req, res) {
         if (isNaN(price) || price < 0) {
           throw new Error('Unit price cannot be negative.');
         }
+        if (itemDisc < 0) {
+          throw new Error('Item discount cannot be negative.');
+        }
 
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product || product.status !== 'Active') {
@@ -176,7 +199,12 @@ export async function createInvoice(req, res) {
           throw new Error(`Insufficient stock for product: ${product.name}. Available: ${product.stockQty}, Requested: ${qty}`);
         }
 
-        const lineTotal = Number((qty * price - itemDisc).toFixed(2));
+        const grossLineTotal = Number((qty * price).toFixed(2));
+        if (itemDisc > grossLineTotal) {
+          throw new Error(`Item discount cannot exceed line total for ${product.name}.`);
+        }
+
+        const lineTotal = Number((grossLineTotal - itemDisc).toFixed(2));
         subtotal += lineTotal;
 
         invoiceItemsData.push({
@@ -196,6 +224,16 @@ export async function createInvoice(req, res) {
       const grandTotal = Number((subtotal - parsedDiscount + parsedDelCharge + parsedInstCharge + parsedOtherCharge).toFixed(2));
       const balanceAmount = Number((grandTotal - parsedPaidAmount).toFixed(2));
 
+      if (parsedDiscount > subtotal + parsedDelCharge + parsedInstCharge + parsedOtherCharge) {
+        throw new Error('Invoice discount cannot exceed the invoice total.');
+      }
+      if (grandTotal < 0) {
+        throw new Error('Invoice total cannot be negative.');
+      }
+      if (parsedPaidAmount > grandTotal) {
+        throw new Error(`Paid amount cannot exceed invoice total. Invoice total: ${grandTotal}`);
+      }
+
       let paymentStatus = 'CREDIT';
       if (parsedPaidAmount === grandTotal) {
         paymentStatus = 'PAID';
@@ -204,10 +242,14 @@ export async function createInvoice(req, res) {
       }
 
       // Generate invoice number
-      const invoiceCount = await tx.invoice.count();
       const settings = await tx.businessSettings.findUnique({ where: { id: 'default' } });
       const prefix = settings ? settings.invoicePrefix : 'INV-';
-      const invoiceNumber = `${prefix}${new Date().getFullYear()}-${String(invoiceCount + 1).padStart(4, '0')}`;
+      const invoiceNumber = await getNextDocumentNumber(tx, {
+        counterName: 'invoice',
+        prefix,
+        modelName: 'invoice',
+        fieldName: 'invoiceNumber',
+      });
 
       // 3. Create Invoice
       const invoice = await tx.invoice.create({
@@ -241,13 +283,29 @@ export async function createInvoice(req, res) {
 
       // 4. Update Product Stock and write StockMovement
       for (const item of invoice.items) {
-        const prod = await tx.product.findUnique({ where: { id: item.productId } });
-        const newStock = prod.stockQty - item.quantity;
-
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stockQty: newStock },
-        });
+        let updatedProduct;
+        if (req.user.role === 'ADMIN') {
+          updatedProduct = await tx.product.update({
+            where: { id: item.productId },
+            data: { stockQty: { decrement: item.quantity } },
+            select: { stockQty: true },
+          });
+        } else {
+          const updateResult = await tx.product.updateMany({
+            where: {
+              id: item.productId,
+              stockQty: { gte: item.quantity },
+            },
+            data: { stockQty: { decrement: item.quantity } },
+          });
+          if (updateResult.count !== 1) {
+            throw new Error(`Insufficient stock for product: ${item.productName}.`);
+          }
+          updatedProduct = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { stockQty: true },
+          });
+        }
 
         await tx.stockMovement.create({
           data: {
@@ -257,7 +315,7 @@ export async function createInvoice(req, res) {
             referenceId: invoice.id,
             quantityIn: 0,
             quantityOut: item.quantity,
-            balanceAfter: newStock,
+            balanceAfter: updatedProduct.stockQty,
             description: `Sold in Invoice ${invoiceNumber}`,
           },
         });
@@ -328,8 +386,12 @@ export async function createInvoice(req, res) {
         });
 
         // Create Payment record
-        const paymentCount = await tx.payment.count();
-        const paymentNo = `PAY-${new Date().getFullYear()}-${String(paymentCount + 1).padStart(4, '0')}`;
+        const paymentNo = await getNextDocumentNumber(tx, {
+          counterName: 'payment',
+          prefix: 'PAY-',
+          modelName: 'payment',
+          fieldName: 'paymentNumber',
+        });
         await tx.payment.create({
           data: {
             paymentNumber: paymentNo,
@@ -353,8 +415,12 @@ export async function createInvoice(req, res) {
 
       // 7. Deliveries
       if (shouldCreateDelivery || parsedDelCharge > 0) {
-        const deliveryCount = await tx.delivery.count();
-        const deliveryNumber = `DEL-${new Date().getFullYear()}-${String(deliveryCount + 1).padStart(4, '0')}`;
+        const deliveryNumber = await getNextDocumentNumber(tx, {
+          counterName: 'delivery',
+          prefix: 'DEL-',
+          modelName: 'delivery',
+          fieldName: 'deliveryNumber',
+        });
 
         await tx.delivery.create({
           data: {
@@ -391,8 +457,9 @@ export async function createInvoice(req, res) {
       }
 
       return invoice;
-    });
+    }, WRITE_TRANSACTION_OPTIONS);
 
+    invalidateInvoiceRelatedCache();
     return res.status(201).json(result);
   } catch (error) {
     if (req.file?.path) {
@@ -455,8 +522,12 @@ export async function addInvoicePayment(req, res) {
       });
 
       // Customer payment record
-      const paymentCount = await tx.payment.count();
-      const paymentNo = `PAY-${new Date().getFullYear()}-${String(paymentCount + 1).padStart(4, '0')}`;
+      const paymentNo = await getNextDocumentNumber(tx, {
+        counterName: 'payment',
+        prefix: 'PAY-',
+        modelName: 'payment',
+        fieldName: 'paymentNumber',
+      });
       await tx.payment.create({
         data: {
           paymentNumber: paymentNo,
@@ -493,8 +564,9 @@ export async function addInvoicePayment(req, res) {
       });
 
       return updatedInvoice;
-    });
+    }, WRITE_TRANSACTION_OPTIONS);
 
+    invalidateInvoiceRelatedCache();
     return res.json(result);
   } catch (error) {
     console.error('Invoice payment error:', error);
@@ -536,12 +608,10 @@ export async function cancelInvoice(req, res) {
 
       // 2. Restore stock for each item & add RETURN_IN stock movement
       for (const item of invoice.items) {
-        const prod = await tx.product.findUnique({ where: { id: item.productId } });
-        const restoredStock = prod.stockQty + item.quantity;
-
-        await tx.product.update({
+        const updatedProduct = await tx.product.update({
           where: { id: item.productId },
-          data: { stockQty: restoredStock },
+          data: { stockQty: { increment: item.quantity } },
+          select: { stockQty: true },
         });
 
         await tx.stockMovement.create({
@@ -552,7 +622,7 @@ export async function cancelInvoice(req, res) {
             referenceId: invoice.id,
             quantityIn: item.quantity,
             quantityOut: 0,
-            balanceAfter: restoredStock,
+            balanceAfter: updatedProduct.stockQty,
             description: `Returned - Cancelled Invoice ${invoice.invoiceNumber}`,
           },
         });
@@ -615,8 +685,9 @@ export async function cancelInvoice(req, res) {
       });
 
       return updatedInvoice;
-    });
+    }, WRITE_TRANSACTION_OPTIONS);
 
+    invalidateInvoiceRelatedCache();
     return res.json({ message: 'Invoice cancelled successfully.', invoice: result });
   } catch (error) {
     console.error('Cancel invoice error:', error);
@@ -643,6 +714,7 @@ export async function deleteInvoice(req, res) {
     }
 
     await prisma.invoice.delete({ where: { id } });
+    invalidateInvoiceRelatedCache();
     return res.json({ message: 'Invoice deleted from records.' });
   } catch (error) {
     console.error('Delete invoice error:', error);
@@ -658,7 +730,8 @@ export async function getInvoicePrintDetails(req, res) {
       include: {
         customer: true,
         items: true,
-        deliveries: true
+        deliveries: true,
+        installments: true
       }
     });
 

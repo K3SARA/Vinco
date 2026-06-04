@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import { 
   DollarSign, Plus, Search, Edit, Trash2, X, Eye, 
   ShoppingCart, HelpCircle, CheckCircle
@@ -17,6 +18,7 @@ export default function Purchases() {
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm);
 
   // Modals state
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
@@ -42,17 +44,30 @@ export default function Purchases() {
 
   const translate = (en, si) => (lang === 'en' ? en : si);
 
+  function showAlert(type, text) {
+    setAlertMsg({ type, text });
+    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  }
+
   useEffect(() => {
     const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);
 
-  const loadData = async () => {
+  const loadPurchases = async () => {
     setLoading(true);
     try {
-      const pRes = await api.get(`/purchases?search=${searchTerm}`);
+      const pRes = await api.get(`/purchases?search=${encodeURIComponent(debouncedSearchTerm)}`);
       setPurchases(pRes.data);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Failed to retrieve purchase logs.');
+    }
+  };
+
+  const loadLookups = async () => {
+    try {
       const prodRes = await api.get('/products?status=Active');
       setProducts(prodRes.data);
       const suppRes = await api.get('/suppliers?status=Active');
@@ -65,14 +80,32 @@ export default function Purchases() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [searchTerm]);
-
-  const showAlert = (type, text) => {
-    setAlertMsg({ type, text });
-    setTimeout(() => setAlertMsg({ type: '', text: '' }), 5000);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [pRes, prodRes, suppRes] = await Promise.all([
+        api.get(`/purchases?search=${encodeURIComponent(debouncedSearchTerm)}`),
+        api.get('/products?status=Active'),
+        api.get('/suppliers?status=Active'),
+      ]);
+      setPurchases(pRes.data);
+      setProducts(prodRes.data);
+      setSuppliers(suppRes.data);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Failed to retrieve purchase logs.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadLookups();
+  }, []);
+
+  useEffect(() => {
+    loadPurchases();
+  }, [debouncedSearchTerm]);
 
   const handleOpenAdd = () => {
     setSelectedSupplier(null);

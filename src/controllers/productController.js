@@ -1,6 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma.js';
+import { getOrSetCache, invalidateCache } from '../utils/cache.js';
 
-const prisma = new PrismaClient();
+const catalogCachePrefixes = ['dashboard:', 'categories:', 'products:'];
+
+function invalidateCatalogCache() {
+  invalidateCache(catalogCachePrefixes);
+}
 
 // ==========================================
 // CATEGORIES
@@ -8,14 +13,17 @@ const prisma = new PrismaClient();
 
 export async function getCategories(req, res) {
   try {
-    const categories = await prisma.category.findMany({
-      include: {
-        _count: {
-          select: { products: true }
-        }
-      },
-      orderBy: { name: 'asc' }
-    });
+    const categories = await getOrSetCache('categories:list', () =>
+      prisma.category.findMany({
+        include: {
+          _count: {
+            select: { products: true }
+          }
+        },
+        orderBy: { name: 'asc' }
+      }),
+      120_000
+    );
     return res.json(categories);
   } catch (error) {
     console.error('Get categories error:', error);
@@ -34,6 +42,7 @@ export async function createCategory(req, res) {
     const category = await prisma.category.create({
       data: { name, slug },
     });
+    invalidateCatalogCache();
     return res.status(201).json(category);
   } catch (error) {
     console.error('Create category error:', error);
@@ -57,6 +66,7 @@ export async function updateCategory(req, res) {
       where: { id },
       data: { name, slug },
     });
+    invalidateCatalogCache();
     return res.json(category);
   } catch (error) {
     console.error('Update category error:', error);
@@ -78,6 +88,7 @@ export async function deleteCategory(req, res) {
     }
 
     await prisma.category.delete({ where: { id } });
+    invalidateCatalogCache();
     return res.json({ message: 'Category deleted successfully.' });
   } catch (error) {
     console.error('Delete category error:', error);
@@ -114,38 +125,42 @@ export async function getProducts(req, res) {
       // Wait! Let's do it using raw condition or filter in JS to support dynamic minStockAlert. Let's do it in JS if lowStock is true!
     }
 
-    let products = await prisma.product.findMany({
-      include: { category: true },
-      orderBy: { code: 'asc' },
-    });
+    let products = await getOrSetCache(
+      `products:${JSON.stringify({ search: search || '', categoryId: categoryId || '', lowStock: lowStock || '', status: status || '' })}`,
+      async () => {
+        let rows = await prisma.product.findMany({
+          include: { category: true },
+          orderBy: { code: 'asc' },
+        });
 
-    // Search filter
-    if (search) {
-      const q = search.toLowerCase();
-      products = products.filter(p => 
-        p.name.toLowerCase().includes(q) ||
-        p.code.toLowerCase().includes(q) ||
-        (p.category && p.category.name.toLowerCase().includes(q)) ||
-        (p.material && p.material.toLowerCase().includes(q)) ||
-        (p.color && p.color.toLowerCase().includes(q)) ||
-        (p.brand && p.brand.toLowerCase().includes(q))
-      );
-    }
+        if (search) {
+          const q = search.toLowerCase();
+          rows = rows.filter(p =>
+            p.name.toLowerCase().includes(q) ||
+            p.code.toLowerCase().includes(q) ||
+            (p.category && p.category.name.toLowerCase().includes(q)) ||
+            (p.material && p.material.toLowerCase().includes(q)) ||
+            (p.color && p.color.toLowerCase().includes(q)) ||
+            (p.brand && p.brand.toLowerCase().includes(q))
+          );
+        }
 
-    // Category filter
-    if (categoryId) {
-      products = products.filter(p => p.categoryId === categoryId);
-    }
+        if (categoryId) {
+          rows = rows.filter(p => p.categoryId === categoryId);
+        }
 
-    // Low stock alert filter
-    if (lowStock === 'true') {
-      products = products.filter(p => p.stockQty <= p.minStockAlert);
-    }
+        if (lowStock === 'true') {
+          rows = rows.filter(p => p.stockQty <= p.minStockAlert);
+        }
 
-    // Status filter
-    if (status) {
-      products = products.filter(p => p.status === status);
-    }
+        if (status) {
+          rows = rows.filter(p => p.status === status);
+        }
+
+        return rows;
+      },
+      45_000
+    );
 
     return res.json(products);
   } catch (error) {
@@ -243,6 +258,7 @@ export async function createProduct(req, res) {
       return product;
     });
 
+    invalidateCatalogCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Create product error:', error);
@@ -335,6 +351,7 @@ export async function updateProduct(req, res) {
       return product;
     });
 
+    invalidateCatalogCache();
     return res.json(result);
   } catch (error) {
     console.error('Update product error:', error);
@@ -375,6 +392,7 @@ export async function deleteProduct(req, res) {
       where: { id },
     });
 
+    invalidateCatalogCache();
     return res.json({ message: 'Product deleted successfully.' });
   } catch (error) {
     console.error('Delete product error:', error);

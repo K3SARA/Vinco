@@ -1,7 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import { calculateCustomerBalanceAfter } from '../utils/ledger.js';
+import { getNextDocumentNumber } from '../utils/documentNumbers.js';
+import { invalidateCache } from '../utils/cache.js';
 
 const prisma = new PrismaClient();
+
+function invalidateOrderRelatedCache() {
+  invalidateCache(['dashboard:', 'customers:', 'products:', 'invoices:']);
+}
 
 export async function getOrders(req, res) {
   const { search, orderStatus, deliveryStatus } = req.query;
@@ -91,6 +97,9 @@ export async function createOrder(req, res) {
   const parsedInstCharge = parseFloat(installationCharge) || 0.0;
   const parsedAdvance = parseFloat(advancePayment) || 0.0;
 
+  if (parsedDiscount < 0 || parsedDelCharge < 0 || parsedInstCharge < 0) {
+    return res.status(400).json({ error: 'Discounts and charges cannot be negative.' });
+  }
   if (parsedAdvance < 0) {
     return res.status(400).json({ error: 'Advance payment cannot be negative.' });
   }
@@ -113,6 +122,12 @@ export async function createOrder(req, res) {
         if (isNaN(qty) || qty <= 0) {
           throw new Error('Quantity must be greater than zero.');
         }
+        if (isNaN(price) || price < 0) {
+          throw new Error('Unit price cannot be negative.');
+        }
+        if (itemDisc < 0) {
+          throw new Error('Item discount cannot be negative.');
+        }
 
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product || product.status !== 'Active') {
@@ -124,7 +139,12 @@ export async function createOrder(req, res) {
           throw new Error(`Insufficient stock to reserve for ${product.name}. Available: ${product.stockQty}, Requested: ${qty}`);
         }
 
-        const lineTotal = Number((qty * price - itemDisc).toFixed(2));
+        const grossLineTotal = Number((qty * price).toFixed(2));
+        if (itemDisc > grossLineTotal) {
+          throw new Error(`Item discount cannot exceed line total for ${product.name}.`);
+        }
+
+        const lineTotal = Number((grossLineTotal - itemDisc).toFixed(2));
         subtotal += lineTotal;
 
         orderItemsData.push({
@@ -141,11 +161,25 @@ export async function createOrder(req, res) {
       const totalAmount = Number((subtotal - parsedDiscount + parsedDelCharge + parsedInstCharge).toFixed(2));
       const balanceAmount = Number((totalAmount - parsedAdvance).toFixed(2));
 
+      if (parsedDiscount > subtotal + parsedDelCharge + parsedInstCharge) {
+        throw new Error('Order discount cannot exceed the order total.');
+      }
+      if (totalAmount < 0) {
+        throw new Error('Order total cannot be negative.');
+      }
+      if (parsedAdvance > totalAmount) {
+        throw new Error(`Advance payment cannot exceed order total. Order total: ${totalAmount}`);
+      }
+
       // Generate order number
-      const orderCount = await tx.order.count();
       const settings = await tx.businessSettings.findUnique({ where: { id: 'default' } });
       const prefix = settings ? settings.orderPrefix : 'ORD-';
-      const orderNumber = `${prefix}${new Date().getFullYear()}-${String(orderCount + 1).padStart(4, '0')}`;
+      const orderNumber = await getNextDocumentNumber(tx, {
+        counterName: 'order',
+        prefix,
+        modelName: 'order',
+        fieldName: 'orderNumber',
+      });
 
       // Create order
       const order = await tx.order.create({
@@ -173,13 +207,29 @@ export async function createOrder(req, res) {
       // Handle stock reservation if reserveStock is ON
       if (reserveStock) {
         for (const item of order.items) {
-          const prod = await tx.product.findUnique({ where: { id: item.productId } });
-          const newStock = prod.stockQty - item.quantity;
-
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stockQty: newStock },
-          });
+          let updatedProduct;
+          if (req.user.role === 'ADMIN') {
+            updatedProduct = await tx.product.update({
+              where: { id: item.productId },
+              data: { stockQty: { decrement: item.quantity } },
+              select: { stockQty: true },
+            });
+          } else {
+            const updateResult = await tx.product.updateMany({
+              where: {
+                id: item.productId,
+                stockQty: { gte: item.quantity },
+              },
+              data: { stockQty: { decrement: item.quantity } },
+            });
+            if (updateResult.count !== 1) {
+              throw new Error(`Insufficient stock to reserve for ${item.productName}.`);
+            }
+            updatedProduct = await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { stockQty: true },
+            });
+          }
 
           await tx.stockMovement.create({
             data: {
@@ -189,7 +239,7 @@ export async function createOrder(req, res) {
               referenceId: order.id,
               quantityIn: 0,
               quantityOut: item.quantity,
-              balanceAfter: newStock,
+              balanceAfter: updatedProduct.stockQty,
               description: `Reserved for Customer Order ${orderNumber}`,
             },
           });
@@ -234,8 +284,12 @@ export async function createOrder(req, res) {
         });
 
         // Payment record
-        const paymentCount = await tx.payment.count();
-        const paymentNo = `PAY-${new Date().getFullYear()}-${String(paymentCount + 1).padStart(4, '0')}`;
+        const paymentNo = await getNextDocumentNumber(tx, {
+          counterName: 'payment',
+          prefix: 'PAY-',
+          modelName: 'payment',
+          fieldName: 'paymentNumber',
+        });
         await tx.payment.create({
           data: {
             paymentNumber: paymentNo,
@@ -260,6 +314,7 @@ export async function createOrder(req, res) {
       return order;
     });
 
+    invalidateOrderRelatedCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Create order error:', error);
@@ -313,8 +368,12 @@ export async function addOrderPayment(req, res) {
       });
 
       // Create Payment record
-      const paymentCount = await tx.payment.count();
-      const paymentNo = `PAY-${new Date().getFullYear()}-${String(paymentCount + 1).padStart(4, '0')}`;
+      const paymentNo = await getNextDocumentNumber(tx, {
+        counterName: 'payment',
+        prefix: 'PAY-',
+        modelName: 'payment',
+        fieldName: 'paymentNumber',
+      });
       await tx.payment.create({
         data: {
           paymentNumber: paymentNo,
@@ -353,6 +412,7 @@ export async function addOrderPayment(req, res) {
       return updatedOrder;
     });
 
+    invalidateOrderRelatedCache();
     return res.json(result);
   } catch (error) {
     console.error('Order payment error:', error);
@@ -382,10 +442,14 @@ export async function convertToInvoice(req, res) {
       const wasStockReserved = order.notes && order.notes.includes('[Stock Reserved]');
 
       // Generate invoice number
-      const invoiceCount = await tx.invoice.count();
       const settings = await tx.businessSettings.findUnique({ where: { id: 'default' } });
       const prefix = settings ? settings.invoicePrefix : 'INV-';
-      const invoiceNumber = `${prefix}${new Date().getFullYear()}-${String(invoiceCount + 1).padStart(4, '0')}`;
+      const invoiceNumber = await getNextDocumentNumber(tx, {
+        counterName: 'invoice',
+        prefix,
+        modelName: 'invoice',
+        fieldName: 'invoiceNumber',
+      });
 
       // Convert order items to invoice items data
       const invoiceItems = order.items.map(item => ({
@@ -439,11 +503,29 @@ export async function convertToInvoice(req, res) {
           if (prod.stockQty < item.quantity && req.user.role !== 'ADMIN') {
             throw new Error(`Insufficient stock for ${prod.name}. Available: ${prod.stockQty}`);
           }
-          const newStock = prod.stockQty - item.quantity;
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stockQty: newStock },
-          });
+          let updatedProduct;
+          if (req.user.role === 'ADMIN') {
+            updatedProduct = await tx.product.update({
+              where: { id: item.productId },
+              data: { stockQty: { decrement: item.quantity } },
+              select: { stockQty: true },
+            });
+          } else {
+            const updateResult = await tx.product.updateMany({
+              where: {
+                id: item.productId,
+                stockQty: { gte: item.quantity },
+              },
+              data: { stockQty: { decrement: item.quantity } },
+            });
+            if (updateResult.count !== 1) {
+              throw new Error(`Insufficient stock for ${prod.name}. Available: ${prod.stockQty}`);
+            }
+            updatedProduct = await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { stockQty: true },
+            });
+          }
 
           await tx.stockMovement.create({
             data: {
@@ -453,7 +535,7 @@ export async function convertToInvoice(req, res) {
               referenceId: invoice.id,
               quantityIn: 0,
               quantityOut: item.quantity,
-              balanceAfter: newStock,
+              balanceAfter: updatedProduct.stockQty,
               description: `Sold in Invoice ${invoiceNumber} (Converted from Order ${order.orderNumber})`,
             },
           });
@@ -531,6 +613,7 @@ export async function convertToInvoice(req, res) {
       return invoice;
     });
 
+    invalidateOrderRelatedCache();
     return res.status(201).json(result);
   } catch (error) {
     console.error('Convert order to invoice error:', error);
@@ -565,12 +648,10 @@ export async function cancelOrder(req, res) {
       const wasStockReserved = order.notes && order.notes.includes('[Stock Reserved]');
       if (wasStockReserved) {
         for (const item of order.items) {
-          const prod = await tx.product.findUnique({ where: { id: item.productId } });
-          const restoredStock = prod.stockQty + item.quantity;
-
-          await tx.product.update({
+          const updatedProduct = await tx.product.update({
             where: { id: item.productId },
-            data: { stockQty: restoredStock },
+            data: { stockQty: { increment: item.quantity } },
+            select: { stockQty: true },
           });
 
           await tx.stockMovement.create({
@@ -581,7 +662,7 @@ export async function cancelOrder(req, res) {
               referenceId: order.id,
               quantityIn: item.quantity,
               quantityOut: 0,
-              balanceAfter: restoredStock,
+              balanceAfter: updatedProduct.stockQty,
               description: `Released reserved stock - Cancelled Order ${order.orderNumber}`,
             },
           });
@@ -640,6 +721,7 @@ export async function cancelOrder(req, res) {
       return updatedOrder;
     });
 
+    invalidateOrderRelatedCache();
     return res.json({ message: 'Order cancelled successfully.', order: result });
   } catch (error) {
     console.error('Cancel order error:', error);
