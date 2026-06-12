@@ -189,28 +189,56 @@ export async function createInvoice(req, res) {
           throw new Error('Item discount cannot be negative.');
         }
 
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        let product;
+        if (item.productId === 'CUSTOM-FURNITURE') {
+          let customProduct = await tx.product.findFirst({
+            where: { code: 'CUSTOM' }
+          });
+          if (!customProduct) {
+            const category = await tx.category.findFirst();
+            if (!category) {
+              throw new Error('Please create at least one product category first before converting custom orders.');
+            }
+            customProduct = await tx.product.create({
+              data: {
+                code: 'CUSTOM',
+                name: 'Custom Furniture Commission',
+                categoryId: category.id,
+                costPrice: 0.0,
+                sellingPrice: 0.0,
+                stockQty: 999999,
+                minStockAlert: 0,
+                status: 'Active',
+                description: 'Placeholder product representing custom made-to-order furniture commissions.'
+              }
+            });
+          }
+          product = customProduct;
+        } else {
+          product = await tx.product.findUnique({ where: { id: item.productId } });
+        }
+
         if (!product || product.status !== 'Active') {
           throw new Error(`Product with SKU ${item.productCode || 'unknown'} is not active or does not exist.`);
         }
 
-        // Check stock availability
-        if (product.stockQty < qty && req.user.role !== 'ADMIN') {
+        // Check stock availability (skip for custom orders)
+        if (item.productId !== 'CUSTOM-FURNITURE' && product.stockQty < qty && req.user.role !== 'ADMIN') {
           throw new Error(`Insufficient stock for product: ${product.name}. Available: ${product.stockQty}, Requested: ${qty}`);
         }
 
         const grossLineTotal = Number((qty * price).toFixed(2));
         if (itemDisc > grossLineTotal) {
-          throw new Error(`Item discount cannot exceed line total for ${product.name}.`);
+          throw new Error(`Item discount cannot exceed line total for ${item.productName || product.name}.`);
         }
 
         const lineTotal = Number((grossLineTotal - itemDisc).toFixed(2));
         subtotal += lineTotal;
 
         invoiceItemsData.push({
-          productId: item.productId,
-          productCode: product.code,
-          productName: product.name,
+          productId: product.id,
+          productCode: item.productCode || product.code,
+          productName: item.productName || product.name,
           quantity: qty,
           unitPrice: price,
           discount: itemDisc,
@@ -283,6 +311,9 @@ export async function createInvoice(req, res) {
 
       // 4. Update Product Stock and write StockMovement
       for (const item of invoice.items) {
+        if (item.productCode === 'CUSTOM' || item.productCode.startsWith('CO-')) {
+          continue;
+        }
         let updatedProduct;
         if (req.user.role === 'ADMIN') {
           updatedProduct = await tx.product.update({

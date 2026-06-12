@@ -25,6 +25,8 @@ import * as settings from './controllers/settingsController.js';
 import * as reports from './controllers/reportController.js';
 import * as materials from './controllers/materialController.js';
 import * as carpenters from './controllers/carpenterController.js';
+import * as customOrders from './controllers/customOrderController.js';
+import * as materialsStock from './controllers/materialStockController.js';
 
 // Auth middleware
 import { authenticateToken, authorizeRoles } from './middleware/auth.js';
@@ -46,7 +48,7 @@ const upload = multer({
     destination: (_req, _file, cb) => cb(null, uploadsPath),
     filename: (_req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
-      const prefix = file.fieldname === 'materialImage' ? 'material' : 'invoice-furniture';
+      const prefix = file.fieldname === 'materialImage' ? 'material' : file.fieldname === 'designFile' ? 'design-ref' : 'invoice-furniture';
       cb(null, `${prefix}-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
     },
   }),
@@ -130,6 +132,23 @@ app.get('/api/orders/:id', authenticateToken, orders.getOrderById);
 app.post('/api/orders/:id/convert-to-invoice', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), orders.convertToInvoice);
 app.post('/api/orders/:id/payment', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), orders.addOrderPayment);
 app.post('/api/orders/:id/cancel', authenticateToken, authorizeRoles('ADMIN'), orders.cancelOrder);
+
+// Custom Orders
+app.get('/api/custom-orders', authenticateToken, customOrders.getCustomOrders);
+app.post('/api/custom-orders', authenticateToken, upload.single('designFile'), customOrders.createCustomOrder);
+app.get('/api/custom-orders/:id', authenticateToken, customOrders.getCustomOrderById);
+app.put('/api/custom-orders/:id', authenticateToken, upload.single('designFile'), customOrders.updateCustomOrder);
+app.post('/api/custom-orders/:id/notes', authenticateToken, customOrders.addCustomOrderNote);
+app.post('/api/custom-orders/:id/stage', authenticateToken, customOrders.updateCustomOrderStage);
+app.delete('/api/custom-orders/:id', authenticateToken, authorizeRoles('ADMIN'), customOrders.deleteCustomOrder);
+
+// Materials Stock
+app.get('/api/materials-stock', authenticateToken, materialsStock.getMaterialsStock);
+app.post('/api/materials-stock', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), materialsStock.createMaterialStock);
+app.get('/api/materials-stock/:id', authenticateToken, materialsStock.getMaterialStockById);
+app.put('/api/materials-stock/:id', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), materialsStock.updateMaterialStock);
+app.post('/api/materials-stock/:id/adjust', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), materialsStock.adjustMaterialStock);
+app.delete('/api/materials-stock/:id', authenticateToken, authorizeRoles('ADMIN'), materialsStock.deleteMaterialStock);
 
 // Payments (Cash/Bank receivables logs)
 app.get('/api/payments', authenticateToken, authorizeRoles('ADMIN', 'CASHIER'), payments.getPayments);

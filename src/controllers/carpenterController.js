@@ -187,9 +187,29 @@ export async function getCarpenters(req, res) {
       }
     }
 
+    const activeWorkloadByCarpenter = new Map();
+    try {
+      const groupedOrders = await prisma.customOrder.groupBy({
+        by: ['assigned_carpenter_id'],
+        where: {
+          stage: { in: ['Confirmed', 'In production', 'Ready'] },
+          assigned_carpenter_id: { not: null },
+        },
+        _count: { id: true },
+      });
+      for (const group of groupedOrders) {
+        if (group.assigned_carpenter_id) {
+          activeWorkloadByCarpenter.set(group.assigned_carpenter_id, group._count.id);
+        }
+      }
+    } catch (err) {
+      console.error('Error grouping carpenter workloads:', err);
+    }
+
     return res.json(carpenters.map((carpenter) => ({
       ...carpenter,
       accountSummary: summariesByCarpenter.get(carpenter.id) || getEmptyCarpenterAccountSummary(),
+      activeWorkload: activeWorkloadByCarpenter.get(carpenter.id) || 0,
     })));
   } catch (error) {
     console.error('Get carpenters error:', error);
@@ -353,7 +373,7 @@ export async function getCarpenterLedger(req, res) {
 
 export async function addCarpenterPayment(req, res) {
   const { id } = req.params;
-  const { amount, date, notes, transactionType = 'PAYMENT' } = req.body;
+  const { amount, date, notes, transactionType = 'PAYMENT', customOrderNumber } = req.body;
   const paymentAmount = parseFloat(amount);
   const normalizedTransactionType = normalizeCarpenterTransactionType(transactionType);
 
@@ -377,6 +397,7 @@ export async function addCarpenterPayment(req, res) {
         transactionType: normalizedTransactionType,
         date: date ? new Date(date) : new Date(),
         notes: notes?.trim() || null,
+        customOrderNumber: customOrderNumber?.trim() || null,
       },
     });
 

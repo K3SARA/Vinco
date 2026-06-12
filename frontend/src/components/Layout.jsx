@@ -28,6 +28,8 @@ import {
   Users,
   WalletCards,
   X,
+  Layers,
+  Wrench,
 } from 'lucide-react';
 
 const routeTitles = [
@@ -42,6 +44,8 @@ const routeTitles = [
   { match: (path) => path.startsWith('/carpenters'), title: 'Carpenter Ledger' },
   { match: (path) => path.startsWith('/reports'), title: 'Reports' },
   { match: (path) => path.startsWith('/settings'), title: 'Settings' },
+  { match: (path) => path.startsWith('/custom-orders'), title: 'Custom Manufacture Orders' },
+  { match: (path) => path.startsWith('/materials-stock'), title: 'Materials Stock Book' },
   { match: () => true, title: 'Shopbook' },
 ];
 
@@ -95,6 +99,14 @@ const desktopMenuItems = [
     roles: ['ADMIN', 'CASHIER', 'SALESPERSON'],
   },
   {
+    path: '/custom-orders',
+    label: 'Custom Orders',
+    siLabel: 'අභිමත ඇණවුම්',
+    icon: Wrench,
+    roles: ['ADMIN', 'CASHIER', 'SALESPERSON'],
+    badge: 'NEW',
+  },
+  {
     path: '/orders',
     label: 'Customer Orders',
     siLabel: 'පාරිභෝගික ඇණවුම්',
@@ -106,13 +118,20 @@ const desktopMenuItems = [
     label: 'Delivery Tracking',
     siLabel: 'බෙදාහැරීම් සොයාබැලීම',
     icon: Truck,
-    roles: ['ADMIN', 'CASHIER', 'DELIVERY_STAFF'],
+    roles: ['ADMIN', 'CASHIER', 'SALESPERSON', 'DELIVERY_STAFF'],
   },
   {
     path: '/products',
     label: 'Products Stock',
     siLabel: 'නිෂ්පාදන සහ තොග',
     icon: Package,
+    roles: ['ADMIN', 'CASHIER', 'SALESPERSON'],
+  },
+  {
+    path: '/materials-stock',
+    label: 'Materials Stock',
+    siLabel: 'අමුද්‍රව්‍ය තොගය',
+    icon: Layers,
     roles: ['ADMIN', 'CASHIER', 'SALESPERSON'],
   },
   {
@@ -271,7 +290,16 @@ function DesktopShell({ lang, toggleLanguage }) {
                 }`}
               >
                 <Icon size={20} className={isActive ? 'text-white' : 'text-stone-400'} />
-                {sidebarOpen && <span>{translate(item.label, item.siLabel)}</span>}
+                {sidebarOpen && (
+                  <div className="flex flex-1 items-center justify-between">
+                    <span>{translate(item.label, item.siLabel)}</span>
+                    {item.badge && (
+                      <span className="rounded bg-[#B34A1A] px-1.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider animate-pulse">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
               </Link>
             );
           })}

@@ -133,6 +133,7 @@ model Customer {
   ledgerEntries  CustomerLedger[]
   warranties     Warranty[]
   installments   Installment[]
+  customOrders   CustomOrder[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 }
@@ -398,6 +399,7 @@ model Carpenter {
   defaultDailyPayment Float              @default(0.0)
   active              Boolean            @default(true)
   payments            CarpenterPayment[]
+  customOrders        CustomOrder[]
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 }
@@ -410,6 +412,7 @@ model CarpenterPayment {
   amount          Float
   transactionType String    @default("PAYMENT") // PAYMENT, CREDIT
   notes           String?
+  customOrderNumber String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -485,3 +488,44 @@ model Installment {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 }
+
+model CustomOrder {
+  id                    String        @id @default(uuid())
+  order_number          String        @unique // CO-XXX
+  customer_id           String
+  customer              Customer      @relation(fields: [customer_id], references: [id])
+  order_date            DateTime      @default(now())
+  furniture_title       String
+  stage                 String        @default("Order placed") // Order placed, Quoted, Confirmed, In production, Ready, Delivered
+  dim_length_cm         Float?
+  dim_width_cm          Float?
+  dim_height_cm         Float?
+  timber_type           String?
+  timber_grade          String?
+  finish                String?
+  additional_materials  String?
+  design_reference_file String?
+  material_line_items   Json          @default("[]")
+  est_days              Float?
+  daily_rate            Float?
+  quote_price           Float?
+  assigned_carpenter_id String?
+  assigned_carpenter    Carpenter?    @relation(fields: [assigned_carpenter_id], references: [id])
+  activity_log          Json          @default("[]")
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+model MaterialStock {
+  material_id              String   @id @default(uuid())
+  material_name            String   @unique
+  material_type            String   // Timber, Board
+  unit                     String   @default("sq ft")
+  current_stock_sqft       Float    @default(0.0)
+  low_stock_threshold_sqft Float    @default(0.0)
+  cost_per_sqft            Float    @default(0.0)
+  stock_history            Json     @default("[]")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+

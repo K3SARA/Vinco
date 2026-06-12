@@ -20,6 +20,8 @@ import Expenses from './pages/Expenses';
 import Carpenters from './pages/Carpenters';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import CustomOrders from './pages/CustomOrders';
+import MaterialsStock from './pages/MaterialsStock';
 
 const guard = (element, roles) => (
   <ProtectedRoute allowedRoles={roles}>
@@ -61,8 +63,10 @@ export default function App() {
             
             {/* Proposals & Custom Reservation Pipelines */}
             <Route path="quotations" element={guard(<Quotations />, ROLE_GROUPS.SALES_DESK)} />
+            <Route path="custom-orders" element={guard(<CustomOrders />, ROLE_GROUPS.SALES_DESK)} />
             <Route path="orders" element={guard(<Orders />, ROLE_GROUPS.SALES_DESK)} />
             <Route path="deliveries" element={guard(<Deliveries />, ROLE_GROUPS.DELIVERY_DESK)} />
+            <Route path="materials-stock" element={guard(<MaterialsStock />, ROLE_GROUPS.SALES_DESK)} />
             
             {/* Supplier & Payables Modules */}
             <Route path="suppliers" element={guard(<Suppliers />, ROLE_GROUPS.ADMIN_ONLY)} />

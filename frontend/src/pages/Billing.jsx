@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import InvoiceA4Print from '../components/InvoiceA4Print';
@@ -10,6 +10,7 @@ import {
 
 export default function Billing() {
   const { user } = useAuth();
+  const location = useLocation();
   
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -100,10 +101,37 @@ export default function Billing() {
     loadData();
   }, []);
 
+  // Handle pre-filled state from custom order conversion
+  useEffect(() => {
+    if (location.state?.prefillCustomer) {
+      setSelectedCustomer(location.state.prefillCustomer);
+      setCustSearch(location.state.prefillCustomer.name);
+    }
+    if (location.state?.customOrderItem) {
+      const item = location.state.customOrderItem;
+      setCartItems([
+        {
+          productId: item.productId,
+          productCode: item.productCode,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discount: item.discount,
+          materialId: '',
+          materialName: '',
+          materialImage: '',
+          warrantyPeriod: 'No Warranty',
+          stockQty: 999999,
+          notes: item.notes || '',
+        }
+      ]);
+    }
+  }, [location.state]);
+
   // Calculate cart totals
-  const subtotal = cartItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice - item.discount), 0);
-  const grandTotal = subtotal - discount + parseFloat(deliveryCharge || 0) + parseFloat(installationCharge || 0) + parseFloat(otherCharge || 0);
-  const balanceAmount = grandTotal - paidAmount;
+  const subtotal = Number(cartItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice - item.discount), 0).toFixed(2));
+  const grandTotal = Number((subtotal - discount + parseFloat(deliveryCharge || 0) + parseFloat(installationCharge || 0) + parseFloat(otherCharge || 0)).toFixed(2));
+  const balanceAmount = Number((grandTotal - paidAmount).toFixed(2));
 
   // Recalculate installments when grandTotal / paidAmount / installmentCount / enableInstallments changes
   useEffect(() => {
@@ -113,11 +141,21 @@ export default function Billing() {
     }
 
     const list = [];
-    const instAmt = Number((balanceAmount / installmentCount).toFixed(2));
+    const baseAmt = Number((balanceAmount / installmentCount).toFixed(2));
+    let accumulated = 0;
     const today = new Date();
     
     for (let i = 1; i <= installmentCount; i++) {
       const dueDate = new Date(today.getFullYear(), today.getMonth() + i, today.getDate());
+      let instAmt = baseAmt;
+      
+      if (i === installmentCount) {
+        // Last installment absorbs the rounding difference
+        instAmt = Number((balanceAmount - accumulated).toFixed(2));
+      } else {
+        accumulated = Number((accumulated + baseAmt).toFixed(2));
+      }
+      
       list.push({
         installmentAmount: instAmt,
         dueDate: dueDate.toISOString().split('T')[0]
