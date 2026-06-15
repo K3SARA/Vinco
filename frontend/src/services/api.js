@@ -1,7 +1,9 @@
 import axios from 'axios';
 
 const apiHost = import.meta.env.DEV ? window.location.hostname : '';
-const apiBaseUrl = import.meta.env.DEV ? `http://${apiHost}:5000/api` : '/api';
+const apiBaseUrl = import.meta.env.DEV 
+  ? `http://${apiHost}:5000/api` 
+  : (import.meta.env.VITE_API_URL || '/api');
 
 const api = axios.create({
   baseURL: apiBaseUrl,
