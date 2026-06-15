@@ -13,7 +13,7 @@ const STAGES = ['Order placed', 'Quoted', 'Confirmed', 'In production', 'Ready',
 export default function CustomOrders() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
 
   // View state: 'list' | 'create' | 'detail' | 'edit'
   const [view, setView] = useState('list');
@@ -83,7 +83,7 @@ export default function CustomOrders() {
   const translate = (en, si) => (lang === 'en' ? en : si);
 
   useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
+    const handleLangChange = () => setLang(localStorage.getItem('vinco_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);

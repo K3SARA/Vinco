@@ -13,7 +13,7 @@ export default function Settings() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
 
   // Form states
   const [bizForm, setBizForm] = useState({
@@ -39,7 +39,7 @@ export default function Settings() {
   const translate = (en, si) => (lang === 'en' ? en : si);
 
   useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
+    const handleLangChange = () => setLang(localStorage.getItem('vinco_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);

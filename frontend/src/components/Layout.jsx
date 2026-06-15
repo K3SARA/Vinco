@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 const routeTitles = [
-  { match: (path) => path === '/', title: 'Welcome to Alight Furniture' },
+  { match: (path) => path === '/', title: 'Welcome to Vinco Furniture' },
   { match: (path) => path.startsWith('/customers') || path.startsWith('/suppliers'), title: 'Manage Credit' },
   { match: (path) => path.startsWith('/expenses') || path.startsWith('/purchases'), title: 'Cash Book' },
   { match: (path) => path.startsWith('/products'), title: 'Stock Book' },
@@ -260,13 +260,13 @@ function DesktopShell({ lang, toggleLanguage }) {
       >
         <div className="flex h-16 items-center justify-between border-b border-stone-800 bg-stone-950 px-4">
           <div className="flex items-center gap-2 overflow-hidden">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-wood-650 font-bold text-white shadow-md">
-              A
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-wood-600 font-bold text-white shadow-md">
+              V
             </div>
             {sidebarOpen && (
               <div className="flex flex-col">
-                <span className="text-sm font-bold leading-none tracking-tight text-wood-100">ALIGHT</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Furniture & Timbers</span>
+                <span className="text-sm font-bold leading-none tracking-tight text-wood-100">VINCO</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Furniture</span>
               </div>
             )}
           </div>
@@ -332,7 +332,7 @@ function DesktopShell({ lang, toggleLanguage }) {
               <Menu size={22} />
             </button>
             <h1 className="hidden text-lg font-bold text-stone-850 sm:block">
-              {translate('Alight Furniture & Timbers Management System', 'ඇලයිට් ෆර්නිචර් සහ ටිම්බර්ස් කළමනාකරණ පද්ධතිය')}
+              {translate('Vinco Furniture Management System', 'වින්කෝ ෆර්නිචර් කළමනාකරණ පද්ධතිය')}
             </h1>
           </div>
 
@@ -432,7 +432,7 @@ function MobileShell() {
           <div className="relative flex w-full max-w-xs flex-col bg-white h-full shadow-2xl animate-slide-in-left">
             {/* Header */}
             <div className="flex h-16 items-center justify-between border-b border-stone-150 px-4 bg-stone-50">
-              <span className="text-base font-black tracking-normal text-stone-900">Alight Navigation</span>
+              <span className="text-base font-black tracking-normal text-stone-900">Vinco Navigation</span>
               <button
                 onClick={() => setSidebarOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 shadow-sm cursor-pointer"
@@ -510,14 +510,14 @@ function MobileShell() {
 }
 
 export default function Layout() {
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
   const isDesktop = useIsDesktop();
   useClearNumericInputsOnFocus();
 
   const toggleLanguage = () => {
     const nextLang = lang === 'en' ? 'si' : 'en';
     setLang(nextLang);
-    localStorage.setItem('alight_lang', nextLang);
+    localStorage.setItem('vinco_lang', nextLang);
     window.dispatchEvent(new Event('languageChange'));
   };
 

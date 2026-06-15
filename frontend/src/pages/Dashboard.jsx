@@ -436,7 +436,7 @@ export default function Dashboard() {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Live Dashboard</p>
             <h1 className="mt-1 text-2xl font-black tracking-normal text-stone-950 sm:text-3xl">
-              Alight Furniture Overview
+              Vinco Furniture Overview
             </h1>
             <p className="mt-1 text-sm font-semibold text-stone-500">
               Current sales, balances, stock alerts, and delivery workload.

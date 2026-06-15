@@ -1,13 +1,13 @@
 {
-  "name": "Alight Furniture Shopbook",
+  "name": "Vinco Furniture Shopbook",
   "short_name": "Shopbook",
-  "description": "Mobile-first billing, credit, stock, cash, and invoice dashboard for Alight Furniture.",
+  "description": "Mobile-first billing, credit, stock, cash, and invoice dashboard for Vinco Furniture.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#ffffff",
-  "theme_color": "#2f6de6",
+  "theme_color": "#e31e24",
   "categories": ["business", "productivity"],
   "icons": [
     {

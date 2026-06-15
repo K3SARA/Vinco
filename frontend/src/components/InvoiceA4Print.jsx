@@ -51,13 +51,13 @@ export default function InvoiceA4Print({ printDetails }) {
           <div className="invoice-a4-logo-frame">
             <img
               src="/logo.png"
-              alt="Alight Furniture & Timbers"
+              alt="Vinco Furniture"
               className="invoice-a4-logo"
             />
           </div>
           <div className="invoice-a4-brand-copy">
-            <strong>ALIGHT FURNITURE & TIMBERS</strong>
-            <span>Decorate your Home with Furniture</span>
+            <strong>VINCO FURNITURE</strong>
+            <span>Life in Style</span>
           </div>
           <div className="invoice-a4-header-block" aria-hidden="true" />
         </div>

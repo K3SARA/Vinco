@@ -2,17 +2,35 @@
 @import "tailwindcss";
 
 @theme {
-  --color-wood-50: #fcf8f4;
-  --color-wood-100: #f6ebd9;
-  --color-wood-200: #ebd1ba;
-  --color-wood-300: #dfb28e;
-  --color-wood-400: #cd8b5b;
-  --color-wood-500: #be6d3a;
-  --color-wood-600: #af5b2e;
-  --color-wood-700: #8c4823;
-  --color-wood-800: #743b1c;
-  --color-wood-900: #5c2d15;
-  --color-wood-950: #36180a;
+  --color-wood-50: #fef2f2;
+  --color-wood-100: #fee2e2;
+  --color-wood-250: #fca5a5;
+  --color-wood-200: #fecaca;
+  --color-wood-300: #fca5a5;
+  --color-wood-400: #f87171;
+  --color-wood-500: #ef4444;
+  --color-wood-555: #ef4444;
+  --color-wood-600: #e31e24;
+  --color-wood-650: #e31e24;
+  --color-wood-655: #e31e24;
+  --color-wood-700: #c92a2a;
+  --color-wood-750: #b91c1c;
+  --color-wood-800: #b01e23;
+  --color-wood-900: #8f1418;
+  --color-wood-950: #5c0b0e;
+
+  --color-blue-50: #fef2f2;
+  --color-blue-100: #fee2e2;
+  --color-blue-200: #fecaca;
+  --color-blue-300: #fca5a5;
+  --color-blue-400: #f87171;
+  --color-blue-500: #ef4444;
+  --color-blue-600: #e31e24;
+  --color-blue-700: #c92a2a;
+  --color-blue-850: #b01e23;
+  --color-blue-800: #b01e23;
+  --color-blue-900: #8f1418;
+  --color-blue-950: #5c0b0e;
 
   --color-forest-50: #f4f8f4;
   --color-forest-100: #e4ebe4;
@@ -117,10 +135,10 @@ textarea {
 
 .help-button {
   gap: 10px;
-  border: 2px solid #2f6de6;
+  border: 2px solid var(--color-blue-600);
   border-radius: 14px;
   padding: 11px 18px;
-  color: #2f6de6;
+  color: var(--color-blue-600);
   font-size: 21px;
   font-weight: 800;
 }
@@ -128,7 +146,7 @@ textarea {
 .reminder-button {
   flex-direction: column;
   gap: 2px;
-  color: #2f6de6;
+  color: var(--color-blue-600);
   font-size: 22px;
   font-weight: 500;
   line-height: 1;
@@ -220,7 +238,7 @@ textarea {
 }
 
 .shopbook-tab.active {
-  color: #2f6de6;
+  color: var(--color-blue-600);
 }
 
 .shopbook-tab.active::before {
@@ -231,7 +249,7 @@ textarea {
   max-width: 78%;
   height: 5px;
   border-radius: 0 0 999px 999px;
-  background: #2f6de6;
+  background: var(--color-blue-600);
 }
 
 .shopbook-page > .space-y-6,
@@ -290,7 +308,7 @@ textarea {
 .shopbook-page button[type='submit'] {
   border: 0 !important;
   border-radius: 14px !important;
-  background: #2f6de6 !important;
+  background: var(--color-blue-600) !important;
   color: #ffffff !important;
   font-size: 16px !important;
   font-weight: 900 !important;
@@ -440,12 +458,12 @@ textarea {
   gap: 18px;
   margin: 0 -32px;
   padding: 22px 32px;
-  background: #fff0e7;
+  background: #fee2e2;
 }
 
 .book-banner.orange-solid {
   justify-content: center;
-  background: #ff963d;
+  background: #e31e24;
   color: #ffffff;
   font-size: 27px;
   font-weight: 900;
@@ -462,12 +480,12 @@ textarea {
   justify-content: center;
   border-radius: 999px;
   background: #ffffff;
-  color: #ff8f3d;
+  color: #e31e24;
   font-size: 38px;
 }
 
 .book-banner-title {
-  color: #ff963d;
+  color: #e31e24;
   font-size: 26px;
   font-weight: 900;
   line-height: 1.05;
@@ -485,7 +503,7 @@ textarea {
   margin-left: auto;
   border: 0;
   border-radius: 7px;
-  background: #ff963d;
+  background: #e31e24;
   padding: 13px 24px;
   color: #ffffff;
   font-size: 26px;
@@ -538,7 +556,7 @@ textarea {
 
 .empty-copy h2 {
   max-width: 560px;
-  color: #2f6de6;
+  color: var(--color-blue-600);
   font-size: 40px;
   font-weight: 500;
   line-height: 1.2;
@@ -584,7 +602,7 @@ textarea {
   gap: 20px;
   border: 0;
   border-radius: 14px;
-  background: #2f6de6;
+  background: var(--color-blue-600);
   color: #ffffff;
   font-size: 27px;
   font-weight: 900;
@@ -629,7 +647,7 @@ textarea {
   max-width: 430px;
   overflow: hidden;
   border-radius: 11px;
-  background: #2f6de6;
+  background: var(--color-blue-600);
 }
 
 .video-thumb img {
@@ -845,7 +863,7 @@ textarea {
   border: 1px solid #e2e7f0;
   border-radius: 8px;
   background: #ffffff;
-  color: #2f6de6;
+  color: var(--color-blue-600);
   font-size: 12px;
   font-weight: 700;
   text-decoration: none;
@@ -872,7 +890,7 @@ textarea {
 }
 
 .metric-card strong {
-  color: #2f6de6;
+  color: var(--color-blue-600);
   font-size: 13px;
 }
 
@@ -890,7 +908,7 @@ textarea {
   gap: 18px;
   border: 0;
   border-radius: 9px;
-  background: #ff963d;
+  background: #e31e24;
   padding: 13px 19px;
   color: #ffffff;
   font-size: 28px;
@@ -1799,7 +1817,7 @@ textarea {
   gap: 7px;
   border: 0;
   border-radius: 8px;
-  background: #2f6de6;
+  background: var(--color-blue-600);
   color: #ffffff;
   padding: 0 14px;
   font-size: 12px;

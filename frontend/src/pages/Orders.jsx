@@ -50,7 +50,7 @@ export default function Orders() {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -94,7 +94,7 @@ export default function Orders() {
   }
 
   useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
+    const handleLangChange = () => setLang(localStorage.getItem('vinco_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);

@@ -9,7 +9,7 @@ export default function Deliveries() {
   
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,7 +35,7 @@ export default function Deliveries() {
   }
 
   useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
+    const handleLangChange = () => setLang(localStorage.getItem('vinco_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);

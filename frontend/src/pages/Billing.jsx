@@ -553,9 +553,9 @@ export default function Billing() {
                   <img src="/logo.png" alt="Logo" className="h-14 w-auto" />
                   <div>
                     <h1 className="text-2xl font-black tracking-tight text-wood-950 font-display">
-                      {printDetails.business?.shopName || 'Alight Furniture'}
+                      {printDetails.business?.shopName || 'Vinco Furniture'}
                     </h1>
-                    <p className="text-[10px] text-stone-500 font-semibold tracking-wide uppercase">Furniture & Quality Timbers</p>
+                    <p className="text-[10px] text-stone-500 font-semibold tracking-wide uppercase">Life in Style</p>
                   </div>
                 </div>
                 <div className="text-right leading-relaxed">
@@ -748,7 +748,7 @@ export default function Billing() {
 
               <div className="text-center text-[8px] font-medium pt-3 border-t border-stone-300 mt-2 space-y-1">
                 <p>Thank you. Come Again!</p>
-                <p>Alight Furniture POS Client System</p>
+                <p>Vinco Furniture POS Client System</p>
               </div>
             </div>
           )

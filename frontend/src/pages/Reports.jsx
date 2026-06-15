@@ -11,7 +11,7 @@ export default function Reports() {
   
   const [reportsData, setReportsData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
 
   // Date range filters
   const [startDate, setStartDate] = useState(() => {
@@ -24,7 +24,7 @@ export default function Reports() {
   const translate = (en, si) => (lang === 'en' ? en : si);
 
   useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
+    const handleLangChange = () => setLang(localStorage.getItem('vinco_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);

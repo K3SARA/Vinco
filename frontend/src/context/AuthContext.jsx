@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     async function loadStoredUser() {
-      const token = localStorage.getItem('alight_token');
+      const token = localStorage.getItem('vinco_token');
       if (!token) {
         setLoading(false);
         return;
@@ -20,8 +20,8 @@ export function AuthProvider({ children }) {
         setUser(response.data.user);
       } catch (error) {
         console.error('Session restore failed:', error);
-        localStorage.removeItem('alight_token');
-        localStorage.removeItem('alight_user');
+        localStorage.removeItem('vinco_token');
+        localStorage.removeItem('vinco_user');
       } finally {
         setLoading(false);
       }
@@ -36,8 +36,8 @@ export function AuthProvider({ children }) {
       const response = await api.post('/auth/login', { username, password });
       const { token, user: loggedUser } = response.data;
       
-      localStorage.setItem('alight_token', token);
-      localStorage.setItem('alight_user', JSON.stringify(loggedUser));
+      localStorage.setItem('vinco_token', token);
+      localStorage.setItem('vinco_user', JSON.stringify(loggedUser));
       setUser(loggedUser);
       return loggedUser;
     } catch (error) {
@@ -48,8 +48,8 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem('alight_token');
-    localStorage.removeItem('alight_user');
+    localStorage.removeItem('vinco_token');
+    localStorage.removeItem('vinco_user');
     setUser(null);
   };
 

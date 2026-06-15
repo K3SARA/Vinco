@@ -84,7 +84,7 @@ const clearGetCache = () => {
 // Interceptor to inject bearer auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('alight_token');
+    const token = localStorage.getItem('vinco_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -132,8 +132,8 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('alight_token');
-      localStorage.removeItem('alight_user');
+      localStorage.removeItem('vinco_token');
+      localStorage.removeItem('vinco_user');
       clearGetCache();
 
       if (!window.location.pathname.endsWith('/login')) {

@@ -9,7 +9,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
       <div className="flex h-screen items-center justify-center bg-stone-50">
         <div className="flex flex-col items-center gap-3">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-wood-300 border-t-wood-600" />
-          <p className="text-sm font-medium text-stone-500">Loading Alight billing system...</p>
+          <p className="text-sm font-medium text-stone-500">Loading Vinco billing system...</p>
         </div>
       </div>
     );

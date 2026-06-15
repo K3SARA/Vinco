@@ -101,12 +101,12 @@ export default function Login() {
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-xl bg-white shadow-lg border border-stone-200 overflow-hidden">
             <img
               src="/logo.png"
-              alt="Alight Furniture & Timbers"
+              alt="Vinco Furniture"
               className="h-full w-full object-contain p-1.5"
             />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-white font-display">
-            {needsSetup ? 'Initial System Setup' : 'Alight Furniture'}
+            {needsSetup ? 'Initial System Setup' : 'Vinco Furniture'}
           </h2>
           <p className="mt-2 text-sm text-stone-400 font-medium">
             {needsSetup 
@@ -250,7 +250,7 @@ export default function Login() {
         )}
 
         <div className="pt-2 text-center text-[10px] text-stone-500 font-medium border-t border-stone-850/50">
-          Alight Furniture Billing System.
+          Vinco Furniture Billing System.
         </div>
       </div>
     </div>

@@ -14,7 +14,7 @@ export default function Invoices() {
   
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [lang, setLang] = useState(localStorage.getItem('alight_lang') || 'en');
+  const [lang, setLang] = useState(localStorage.getItem('vinco_lang') || 'en');
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,7 +45,7 @@ export default function Invoices() {
   }
 
   useEffect(() => {
-    const handleLangChange = () => setLang(localStorage.getItem('alight_lang') || 'en');
+    const handleLangChange = () => setLang(localStorage.getItem('vinco_lang') || 'en');
     window.addEventListener('languageChange', handleLangChange);
     return () => window.removeEventListener('languageChange', handleLangChange);
   }, []);
@@ -355,9 +355,9 @@ export default function Invoices() {
             <div className="hidden p-8 bg-white text-stone-900 font-sans text-xs">
               {/* Branding Letterhead Header Banner */}
               <div className="text-center border-b-2 border-stone-400 pb-3">
-                <img src="/invoice_header.png" alt="Alight Furniture Banner" className="w-full max-h-24 object-contain mx-auto mb-2" />
+                <img src="/logo.png" alt="Vinco Furniture" className="w-full max-h-24 object-contain mx-auto mb-2" />
                 <h2 className="font-extrabold text-sm text-stone-800 leading-tight">
-                  {printDetails.business?.shopName || 'Alight Furniture & Timber (Pvt) Ltd'}
+                  {printDetails.business?.shopName || 'Vinco Furniture & Timber (Pvt) Ltd'}
                 </h2>
                 <p className="text-[10px] text-stone-700 font-bold tracking-wide mt-0.5">
                   {printDetails.business?.address || '360/1 Kolonnawa Road, Gothatuwa'} &nbsp;|&nbsp; 
@@ -649,7 +649,7 @@ export default function Invoices() {
 
               <div className="text-center text-[8px] font-medium pt-3 border-t border-stone-300 mt-2 space-y-1">
                 <p>Thank you. Come Again!</p>
-                <p>Alight Furniture POS Client System</p>
+                <p>Vinco Furniture POS Client System</p>
               </div>
             </div>
           )
